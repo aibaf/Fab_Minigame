@@ -47,6 +47,44 @@ function tierForGap(gap) {
   return TIERS.find((t) => gap <= t.maxGap);
 }
 
+// Farbpalette (aus dem Brief)
+const COLORS = {
+  skyTop: "#243b6b",
+  skyBottom: "#f3a26b",
+  grass: "#3c8f4e",
+  grassDark: "#347a44",
+  road: "#3a3f47",
+  roadEdge: "#5b6230",
+  stripe: "#cdd2da",
+  duckBody: "#FFCD2E",
+  duckBeak: "#F5821F",
+  dash: "#15171c",
+};
+
+// Szenen-/Perspektive-Parameter (Fake-3D Bodenebene)
+const SCENE = {
+  horizonFrac: 0.42, // Horizont bei 42 % Hoehe
+  roadBottomFrac: 0.86, // Bildschirm-Y wo Distanz 0 liegt (Oberkante Cockpit)
+  d0: 30, // Tiefenkompression: groesser = flacher
+  roadHalfBottomFrac: 0.48, // halbe Strassenbreite unten / Viewbreite
+  stripeSpacing: 10, // Meter zwischen Querstreifen (Timing-Anker)
+  maxRenderDist: 260, // m, weiter weg wird nicht gezeichnet
+};
+
+// Projiziert eine Strassen-Distanz d (m) auf den Bildschirm.
+// s in [0,1]: 1 = ganz vorne (gross), 0 = am Horizont (Fluchtpunkt).
+function project(d) {
+  const s = SCENE.d0 / (d + SCENE.d0);
+  const horizonY = view.h * SCENE.horizonFrac;
+  const bottomY = view.h * SCENE.roadBottomFrac;
+  return {
+    s,
+    y: horizonY + (bottomY - horizonY) * s,
+    halfW: view.w * SCENE.roadHalfBottomFrac * s,
+    cx: view.w / 2,
+  };
+}
+
 // +/- jitter um 0
 function jitter(amount) {
   return (Math.random() * 2 - 1) * amount;
@@ -79,6 +117,7 @@ const state = {
   round: 1,
   speed: 0, // aktuelles Tempo (m/s)
   distance: 0, // Restdistanz zur Ente (m)
+  traveled: 0, // in dieser Runde zurueckgelegte Strecke (m), fuer scrollende Marker
   gap: 0, // Restdistanz beim Stillstand (m), Ergebnis der Runde
   outcome: null, // "stop" | "squish" | null
 
@@ -113,6 +152,7 @@ function resetGame() {
 function startRound() {
   state.speed = speedForRound(state.round) + jitter(CONFIG.startSpeedJitter);
   state.distance = CONFIG.startDistance + jitter(CONFIG.startDistanceJitter);
+  state.traveled = 0;
   state.gap = 0;
   state.outcome = null;
   setPhase(PHASE.CRUISE);
@@ -191,12 +231,16 @@ function update(dt) {
 
   if (state.phase === PHASE.CRUISE) {
     // Konstantes Tempo, Distanz schrumpft. Nicht bremsen = Ente ueberfahren.
-    state.distance -= state.speed * dt;
+    const step = state.speed * dt;
+    state.distance -= step;
+    state.traveled += step;
     if (state.distance <= 0) squish();
   } else if (state.phase === PHASE.BRAKE) {
     // Konstante Verzoegerung bis Stillstand.
     state.speed = Math.max(0, state.speed - CONFIG.decel * dt);
-    state.distance -= state.speed * dt;
+    const step = state.speed * dt;
+    state.distance -= step;
+    state.traveled += step;
     if (state.distance <= 0) {
       squish();
     } else if (state.speed <= CONFIG.stopEpsilon) {
@@ -241,70 +285,138 @@ function squish() {
 // RENDER (Schritt 1: Debug-Overlay)
 // ============================================================
 function render() {
-  ctx.clearRect(0, 0, view.w, view.h);
-  ctx.fillStyle = "#15171c";
-  ctx.fillRect(0, 0, view.w, view.h);
+  drawSky();
+  drawGround();
+  // Ente + Bremsweg-Indikator folgen in Schritt 4b
+  drawOverlays();
+  drawHud();
+  drawHint();
+}
 
+// Himmel als Verlauf bis zum Horizont
+function drawSky() {
+  const horizonY = view.h * SCENE.horizonFrac;
+  const grad = ctx.createLinearGradient(0, 0, 0, horizonY);
+  grad.addColorStop(0, COLORS.skyTop);
+  grad.addColorStop(1, COLORS.skyBottom);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, view.w, horizonY);
+}
+
+// Gras + Strasse (Trapez zum Fluchtpunkt) + scrollende Querstreifen
+function drawGround() {
+  const horizonY = view.h * SCENE.horizonFrac;
+  const cx = view.w / 2;
+
+  // Gras unter dem Horizont
+  ctx.fillStyle = COLORS.grass;
+  ctx.fillRect(0, horizonY, view.w, view.h - horizonY);
+
+  // Strasse als Trapez vom Fluchtpunkt nach unten
+  const base = project(0);
+  ctx.fillStyle = COLORS.road;
+  ctx.beginPath();
+  ctx.moveTo(cx - base.halfW, base.y);
+  ctx.lineTo(cx + base.halfW, base.y);
+  ctx.lineTo(cx + 1.5, horizonY);
+  ctx.lineTo(cx - 1.5, horizonY);
+  ctx.closePath();
+  ctx.fill();
+
+  // Strassenraender
+  ctx.strokeStyle = COLORS.roadEdge;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx - base.halfW, base.y);
+  ctx.lineTo(cx - 1.5, horizonY);
+  ctx.moveTo(cx + base.halfW, base.y);
+  ctx.lineTo(cx + 1.5, horizonY);
+  ctx.stroke();
+
+  // Querstreifen alle stripeSpacing Meter, scrollen mit traveled
+  const offset = state.traveled % SCENE.stripeSpacing;
+  ctx.fillStyle = COLORS.stripe;
+  for (let k = 1; ; k++) {
+    const z = k * SCENE.stripeSpacing - offset;
+    if (z <= 0) continue;
+    if (z > SCENE.maxRenderDist) break;
+    const p = project(z);
+    const h = Math.max(1, p.s * 8);
+    const w = p.halfW * 0.86;
+    ctx.globalAlpha = 0.28 + 0.5 * p.s;
+    ctx.fillRect(cx - w, p.y - h / 2, w * 2, h);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Text-Overlays je nach Phase (Start, Ergebnis, Game Over)
+function drawOverlays() {
   const cx = view.w / 2;
   const cy = view.h / 2;
-
-  ctx.fillStyle = "#f5f5f5";
   ctx.textAlign = "center";
-  ctx.font = "600 28px system-ui, sans-serif";
-  ctx.fillText("BREMSPUNKT", cx, cy - 120);
 
-  // Live-Physikwerte (Debug, bis Schritt 4 das Rendering uebernimmt)
-  ctx.font = "20px ui-monospace, monospace";
-  const kmh = Math.round(state.speed * 3.6);
-  const lines = [
-    `Phase:    ${state.phase}`,
-    `Runde:    ${state.round}`,
-    `Tempo:    ${state.speed.toFixed(1)} m/s  (${kmh} km/h)`,
-    `Distanz:  ${Math.max(0, state.distance).toFixed(1)} m`,
-  ];
-  ctx.fillStyle = "#8aa0c0";
-  lines.forEach((t, i) => ctx.fillText(t, cx, cy - 60 + i * 28));
+  if (state.phase === PHASE.READY) {
+    panel(cx, cy, 360, 120);
+    ctx.fillStyle = "#f5f5f5";
+    ctx.font = "700 36px system-ui, sans-serif";
+    ctx.fillText("BREMSPUNKT", cx, cy - 6);
+    ctx.fillStyle = "#cdd8ea";
+    ctx.font = "16px system-ui, sans-serif";
+    ctx.fillText("Bremse so spaet wie moeglich vor der Ente", cx, cy + 26);
+  }
 
-  // Ergebnis der letzten Runde
   if (state.phase === PHASE.RESULT) {
+    panel(cx, cy, 380, 110);
     if (state.outcome === "squish") {
       ctx.fillStyle = "#ff5b5b";
-      ctx.font = "600 26px system-ui, sans-serif";
-      ctx.fillText("SQUISH! Ente plattgefahren", cx, cy + 80);
-      ctx.fillStyle = "#8aa0c0";
+      ctx.font = "700 30px system-ui, sans-serif";
+      ctx.fillText("SQUISH!", cx, cy - 4);
+      ctx.fillStyle = "#cdd8ea";
       ctx.font = "16px system-ui, sans-serif";
-      ctx.fillText(`Leben uebrig: ${state.lives}`, cx, cy + 110);
+      ctx.fillText(`Ente plattgefahren  -  Leben uebrig: ${state.lives}`, cx, cy + 26);
     } else {
       ctx.fillStyle = "#ffd84d";
-      ctx.font = "600 26px system-ui, sans-serif";
-      ctx.fillText(`${state.lastLabel}  -  Abstand ${state.gap.toFixed(2)} m`, cx, cy + 80);
+      ctx.font = "700 30px system-ui, sans-serif";
+      ctx.fillText(`${state.lastLabel}`, cx, cy - 6);
       ctx.fillStyle = "#f5f5f5";
-      ctx.font = "20px system-ui, sans-serif";
-      ctx.fillText(`+${state.lastPoints} Punkte`, cx, cy + 110);
+      ctx.font = "17px system-ui, sans-serif";
+      ctx.fillText(`Abstand ${state.gap.toFixed(2)} m   +${state.lastPoints} Punkte`, cx, cy + 24);
     }
   }
 
-  // Game-Over-Screen
   if (state.phase === PHASE.OVER) {
+    panel(cx, cy, 360, 120);
     ctx.fillStyle = "#ff5b5b";
-    ctx.font = "600 32px system-ui, sans-serif";
-    ctx.fillText("GAME OVER", cx, cy + 70);
+    ctx.font = "700 38px system-ui, sans-serif";
+    ctx.fillText("GAME OVER", cx, cy - 6);
     ctx.fillStyle = "#f5f5f5";
-    ctx.font = "20px system-ui, sans-serif";
-    ctx.fillText(`Punkte: ${state.score}   Best: ${state.best}`, cx, cy + 104);
+    ctx.font = "18px system-ui, sans-serif";
+    ctx.fillText(`Punkte ${state.score}    Best ${state.best}`, cx, cy + 28);
   }
+}
 
-  drawHud();
+// Halbtransparentes, abgerundetes Panel hinter Overlay-Text
+function panel(cx, cy, w, h) {
+  const x = cx - w / 2;
+  const y = cy - h / 2;
+  const r = 16;
+  ctx.fillStyle = "rgba(10, 12, 18, 0.66)";
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+  ctx.fill();
+}
 
-  // Kontext-Hinweis je Phase
-  ctx.fillStyle = "#5a6678";
-  ctx.font = "15px system-ui, sans-serif";
+// Kontext-Hinweis unten
+function drawHint() {
   ctx.textAlign = "center";
-  ctx.fillText(hintForPhase(), cx, view.h - 40);
-
-  ctx.fillStyle = "#3a4456";
-  ctx.font = "12px ui-monospace, monospace";
-  ctx.fillText(`FPS ${Math.round(state.fps)}`, cx, view.h - 16);
+  ctx.fillStyle = "rgba(255,255,255,0.8)";
+  ctx.font = "15px system-ui, sans-serif";
+  ctx.fillText(hintForPhase(), view.w / 2, view.h - 26);
 }
 
 // HUD (Debug-Stil, Schritt 4 macht daraus echtes HUD mit Enten-Icons)
