@@ -112,6 +112,7 @@ const PHASE = {
 // ============================================================
 const state = {
   phase: PHASE.READY,
+  paused: false, // friert die Simulation ein (Loop laeuft weiter)
   time: 0, // Gesamtlaufzeit (s)
 
   round: 1,
@@ -228,6 +229,7 @@ function resize() {
 // ============================================================
 function update(dt) {
   state.time += dt;
+  if (state.paused) return;
 
   if (state.phase === PHASE.CRUISE) {
     // Konstantes Tempo, Distanz schrumpft. Nicht bremsen = Ente ueberfahren.
@@ -287,10 +289,15 @@ function squish() {
 function render() {
   drawSky();
   drawGround();
-  // Ente + Bremsweg-Indikator folgen in Schritt 4b
+  if (isDriving()) drawBrakeHint();
+  drawTargetDuck();
   drawOverlays();
   drawHud();
   drawHint();
+}
+
+function isDriving() {
+  return state.phase === PHASE.CRUISE || state.phase === PHASE.BRAKE;
 }
 
 // Himmel als Verlauf bis zum Horizont
@@ -347,6 +354,115 @@ function drawGround() {
     ctx.fillRect(cx - w, p.y - h / 2, w * 2, h);
   }
   ctx.globalAlpha = 1;
+}
+
+// Dezente Andeutung, wo das Auto bei sofortigem Bremsen zum Stehen kaeme.
+// Weicher, farbcodierter Schatten (gruen sicher -> rot Squish), bewusst unscharf,
+// damit das Bauchgefuehl beim "so spaet wie moeglich" erhalten bleibt.
+function drawBrakeHint() {
+  const brakingDist = (state.speed * state.speed) / (2 * CONFIG.decel);
+  if (brakingDist <= 0.5) return;
+  const z = Math.min(brakingDist, SCENE.maxRenderDist);
+  const p = project(z);
+  const margin = state.distance - brakingDist; // >0 sicher, <0 wuerde ueberfahren
+
+  let rgb;
+  if (margin > 4) rgb = "120, 230, 150";
+  else if (margin > 0) rgb = "245, 215, 90";
+  else rgb = "240, 90, 80";
+
+  const w = p.halfW * 0.92;
+  const h = Math.max(6, p.s * 26);
+  const grad = ctx.createLinearGradient(0, p.y - h, 0, p.y + h);
+  grad.addColorStop(0, `rgba(${rgb}, 0)`);
+  grad.addColorStop(0.5, `rgba(${rgb}, 0.4)`);
+  grad.addColorStop(1, `rgba(${rgb}, 0)`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(p.cx - w, p.y - h, w * 2, h * 2);
+}
+
+// Die Ziel-Ente auf der Strasse, perspektivisch heranskaliert.
+function drawTargetDuck() {
+  if (state.phase === PHASE.READY) return;
+  const p = project(Math.max(state.distance, 0));
+  const h = view.h * 0.46 * p.s;
+  if (h < 3) return;
+  const flat = state.outcome === "squish" && state.phase === PHASE.RESULT;
+  drawDuck(p.cx, p.y, h, flat);
+}
+
+// Zeichnet eine Gummiente, frontal (Blick zum Spieler), Fuesse bei groundY.
+// flat=true -> plattgedrueckt (Squish, wird in Schritt 6 mit Federn ergaenzt).
+function drawDuck(cx, groundY, h, flat) {
+  const w = h * 1.05;
+
+  // Bodenschatten
+  ctx.fillStyle = "rgba(0,0,0,0.28)";
+  ctx.beginPath();
+  ctx.ellipse(cx, groundY, w * 0.5, Math.max(2, h * 0.1), 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (flat) {
+    // Plattgedrueckte Ente: flache Ellipse
+    ctx.fillStyle = COLORS.duckBody;
+    ctx.beginPath();
+    ctx.ellipse(cx, groundY - h * 0.06, w * 0.62, h * 0.1, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = COLORS.duckBeak;
+    ctx.beginPath();
+    ctx.ellipse(cx + w * 0.4, groundY - h * 0.05, w * 0.12, h * 0.05, 0, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+
+  // Koerper
+  const bodyCy = groundY - h * 0.3;
+  ctx.fillStyle = COLORS.duckBody;
+  ctx.beginPath();
+  ctx.ellipse(cx, bodyCy, w * 0.46, h * 0.3, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Fluegel-Andeutungen seitlich am Koerper
+  ctx.fillStyle = "rgba(0,0,0,0.06)";
+  ctx.beginPath();
+  ctx.ellipse(cx - w * 0.34, bodyCy, w * 0.12, h * 0.2, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx + w * 0.34, bodyCy, w * 0.12, h * 0.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Kopf
+  const headR = h * 0.25;
+  const headCy = groundY - h * 0.66;
+  ctx.fillStyle = COLORS.duckBody;
+  ctx.beginPath();
+  ctx.arc(cx, headCy, headR, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Augen
+  const eyeDx = headR * 0.42;
+  const eyeY = headCy - headR * 0.08;
+  const eyeR = Math.max(1, headR * 0.16);
+  ctx.fillStyle = "#1a1a1a";
+  ctx.beginPath();
+  ctx.arc(cx - eyeDx, eyeY, eyeR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx + eyeDx, eyeY, eyeR, 0, Math.PI * 2);
+  ctx.fill();
+  if (eyeR > 2) {
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(cx - eyeDx + eyeR * 0.3, eyeY - eyeR * 0.3, eyeR * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx + eyeDx + eyeR * 0.3, eyeY - eyeR * 0.3, eyeR * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Schnabel
+  ctx.fillStyle = COLORS.duckBeak;
+  ctx.beginPath();
+  ctx.ellipse(cx, headCy + headR * 0.5, headR * 0.55, headR * 0.32, 0, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 // Text-Overlays je nach Phase (Start, Ergebnis, Game Over)
@@ -419,23 +535,50 @@ function drawHint() {
   ctx.fillText(hintForPhase(), view.w / 2, view.h - 26);
 }
 
-// HUD (Debug-Stil, Schritt 4 macht daraus echtes HUD mit Enten-Icons)
+// HUD: Score/Best/Streak links, Runde/Leben rechts, Tempo/Distanz unten.
 function drawHud() {
+  // Score-Block oben links
   ctx.textAlign = "left";
-  ctx.font = "16px ui-monospace, monospace";
-  ctx.fillStyle = "#cdd8ea";
-  ctx.fillText(`Punkte ${state.score}`, 20, 28);
-  ctx.fillText(`Best ${state.best}`, 20, 50);
+  ctx.fillStyle = "#f3f6fb";
+  ctx.font = "700 26px system-ui, sans-serif";
+  ctx.fillText(`${state.score}`, 22, 38);
+  ctx.fillStyle = "#9fb0c8";
+  ctx.font = "13px system-ui, sans-serif";
+  ctx.fillText(`BEST ${state.best}`, 22, 58);
   if (state.streak > 0) {
     ctx.fillStyle = "#ffd84d";
-    ctx.fillText(`Streak x${state.streak}`, 20, 72);
+    ctx.font = "700 16px system-ui, sans-serif";
+    ctx.fillText(`STREAK x${state.streak}`, 22, 82);
   }
 
+  // Runde + Leben oben rechts
   ctx.textAlign = "right";
-  ctx.fillStyle = "#cdd8ea";
-  ctx.fillText(`Runde ${state.round}`, view.w - 20, 28);
-  ctx.fillStyle = "#ff8a8a";
-  ctx.fillText(`Leben ${"\u{1F986}".repeat(state.lives)}`, view.w - 20, 50);
+  ctx.fillStyle = "#9fb0c8";
+  ctx.font = "13px system-ui, sans-serif";
+  ctx.fillText(`RUNDE ${state.round}`, view.w - 22, 26);
+  ctx.font = "20px system-ui, sans-serif";
+  ctx.fillText("\u{1F986}".repeat(Math.max(0, state.lives)), view.w - 22, 52);
+
+  // Tempo + Restdistanz unten (waehrend der Fahrt)
+  if (isDriving()) {
+    const kmh = Math.round(state.speed * 3.6);
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#f3f6fb";
+    ctx.font = "700 30px system-ui, sans-serif";
+    ctx.fillText(`${kmh}`, 24, view.h - 30);
+    ctx.fillStyle = "#9fb0c8";
+    ctx.font = "13px system-ui, sans-serif";
+    ctx.fillText("km/h", 24, view.h - 14);
+
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#f3f6fb";
+    ctx.font = "700 30px system-ui, sans-serif";
+    ctx.fillText(`${Math.max(0, state.distance).toFixed(0)}`, view.w - 24, view.h - 30);
+    ctx.fillStyle = "#9fb0c8";
+    ctx.font = "13px system-ui, sans-serif";
+    ctx.fillText("Meter", view.w - 24, view.h - 14);
+  }
+
   ctx.textAlign = "center";
 }
 
