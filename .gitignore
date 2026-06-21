@@ -5,3 +5,6 @@ build/
 *.log
 .env
 .env.local
+
+# Test artefacts (Playwright MCP)
+.playwright-mcp/
