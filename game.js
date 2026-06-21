@@ -28,7 +28,24 @@ const CONFIG = {
 
   startDistance: 150, // Start-Distanz zur Ente (m)
   startDistanceJitter: 15, // +/- Zufall (m)
+
+  lives: 3, // Startleben
+  roundMultiplierPerRound: 0.1, // Punkte x (1 + (round-1)*this)
 };
+
+// Score-Stufen nach gap (Restabstand beim Stillstand), erste passende gewinnt.
+// streakBonus addiert sich pro aktuellem Streak; keepStreak haelt/erhoeht den Streak.
+const TIERS = [
+  { maxGap: 0.7, label: "Punktlandung", base: 1000, streakBonus: 100, keepStreak: true },
+  { maxGap: 1.6, label: "Stark", base: 700, streakBonus: 60, keepStreak: true },
+  { maxGap: 4, label: "Sauber", base: 400, streakBonus: 0, keepStreak: false },
+  { maxGap: 10, label: "Okay", base: 150, streakBonus: 0, keepStreak: false },
+  { maxGap: Infinity, label: "Feigling", base: 50, streakBonus: 0, keepStreak: false },
+];
+
+function tierForGap(gap) {
+  return TIERS.find((t) => gap <= t.maxGap);
+}
 
 // +/- jitter um 0
 function jitter(amount) {
@@ -65,6 +82,15 @@ const state = {
   gap: 0, // Restdistanz beim Stillstand (m), Ergebnis der Runde
   outcome: null, // "stop" | "squish" | null
 
+  score: 0,
+  best: 0,
+  lives: CONFIG.lives,
+  streak: 0,
+
+  // Ergebnis der letzten Runde (fuer Result-Screen)
+  lastLabel: "",
+  lastPoints: 0,
+
   // Debug/Diagnose
   fps: 0,
   taps: 0,
@@ -72,6 +98,15 @@ const state = {
 
 function setPhase(next) {
   state.phase = next;
+}
+
+// Neues Spiel: Score, Leben, Runde und Streak zuruecksetzen.
+function resetGame() {
+  state.round = 1;
+  state.score = 0;
+  state.lives = CONFIG.lives;
+  state.streak = 0;
+  startRound();
 }
 
 // Startet eine Runde: Tempo und Distanz fuer die aktuelle Runde setzen.
@@ -101,12 +136,15 @@ function handleTap() {
       // bremst bereits, Tipp ignorieren
       break;
     case PHASE.RESULT:
-      state.round++; // naechste Runde (Leben/Game-Over folgt in Schritt 3)
-      startRound();
+      if (state.lives <= 0) {
+        setPhase(PHASE.OVER);
+      } else {
+        state.round++;
+        startRound();
+      }
       break;
     case PHASE.OVER:
-      state.round = 1;
-      startRound(); // Neustart (Platzhalter bis Schritt 3)
+      resetGame();
       break;
   }
 }
@@ -171,6 +209,18 @@ function update(dt) {
 function stop() {
   state.gap = state.distance;
   state.outcome = "stop";
+
+  const tier = tierForGap(state.gap);
+  const raw = tier.base + state.streak * tier.streakBonus;
+  const mult = 1 + (state.round - 1) * CONFIG.roundMultiplierPerRound;
+  const points = Math.round(raw * mult);
+
+  state.score += points;
+  if (state.score > state.best) state.best = state.score;
+  state.streak = tier.keepStreak ? state.streak + 1 : 0;
+
+  state.lastLabel = tier.label;
+  state.lastPoints = points;
   setPhase(PHASE.RESULT);
 }
 
@@ -179,6 +229,11 @@ function squish() {
   state.distance = 0;
   state.gap = 0;
   state.outcome = "squish";
+
+  state.lives = Math.max(0, state.lives - 1);
+  state.streak = 0;
+  state.lastLabel = "Squish";
+  state.lastPoints = 0;
   setPhase(PHASE.RESULT);
 }
 
@@ -214,23 +269,62 @@ function render() {
   if (state.phase === PHASE.RESULT) {
     if (state.outcome === "squish") {
       ctx.fillStyle = "#ff5b5b";
-      ctx.font = "600 24px system-ui, sans-serif";
-      ctx.fillText("SQUISH! Ente plattgefahren", cx, cy + 70);
+      ctx.font = "600 26px system-ui, sans-serif";
+      ctx.fillText("SQUISH! Ente plattgefahren", cx, cy + 80);
+      ctx.fillStyle = "#8aa0c0";
+      ctx.font = "16px system-ui, sans-serif";
+      ctx.fillText(`Leben uebrig: ${state.lives}`, cx, cy + 110);
     } else {
       ctx.fillStyle = "#ffd84d";
-      ctx.font = "600 24px system-ui, sans-serif";
-      ctx.fillText(`Gestoppt - Abstand: ${state.gap.toFixed(2)} m`, cx, cy + 70);
+      ctx.font = "600 26px system-ui, sans-serif";
+      ctx.fillText(`${state.lastLabel}  -  Abstand ${state.gap.toFixed(2)} m`, cx, cy + 80);
+      ctx.fillStyle = "#f5f5f5";
+      ctx.font = "20px system-ui, sans-serif";
+      ctx.fillText(`+${state.lastPoints} Punkte`, cx, cy + 110);
     }
   }
+
+  // Game-Over-Screen
+  if (state.phase === PHASE.OVER) {
+    ctx.fillStyle = "#ff5b5b";
+    ctx.font = "600 32px system-ui, sans-serif";
+    ctx.fillText("GAME OVER", cx, cy + 70);
+    ctx.fillStyle = "#f5f5f5";
+    ctx.font = "20px system-ui, sans-serif";
+    ctx.fillText(`Punkte: ${state.score}   Best: ${state.best}`, cx, cy + 104);
+  }
+
+  drawHud();
 
   // Kontext-Hinweis je Phase
   ctx.fillStyle = "#5a6678";
   ctx.font = "15px system-ui, sans-serif";
+  ctx.textAlign = "center";
   ctx.fillText(hintForPhase(), cx, view.h - 40);
 
   ctx.fillStyle = "#3a4456";
   ctx.font = "12px ui-monospace, monospace";
   ctx.fillText(`FPS ${Math.round(state.fps)}`, cx, view.h - 16);
+}
+
+// HUD (Debug-Stil, Schritt 4 macht daraus echtes HUD mit Enten-Icons)
+function drawHud() {
+  ctx.textAlign = "left";
+  ctx.font = "16px ui-monospace, monospace";
+  ctx.fillStyle = "#cdd8ea";
+  ctx.fillText(`Punkte ${state.score}`, 20, 28);
+  ctx.fillText(`Best ${state.best}`, 20, 50);
+  if (state.streak > 0) {
+    ctx.fillStyle = "#ffd84d";
+    ctx.fillText(`Streak x${state.streak}`, 20, 72);
+  }
+
+  ctx.textAlign = "right";
+  ctx.fillStyle = "#cdd8ea";
+  ctx.fillText(`Runde ${state.round}`, view.w - 20, 28);
+  ctx.fillStyle = "#ff8a8a";
+  ctx.fillText(`Leben ${"\u{1F986}".repeat(state.lives)}`, view.w - 20, 50);
+  ctx.textAlign = "center";
 }
 
 function hintForPhase() {
