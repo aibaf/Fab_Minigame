@@ -8,3 +8,6 @@ build/
 
 # Test artefacts (Playwright MCP)
 .playwright-mcp/
+
+# Screenshots / Verify-Bilder (Canvas-Game zeichnet alles im Code, keine PNG-Assets)
+*.png

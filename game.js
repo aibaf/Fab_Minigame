@@ -31,20 +31,102 @@ const CONFIG = {
 
   lives: 3, // Startleben
   roundMultiplierPerRound: 0.1, // Punkte x (1 + (round-1)*this)
+
+  // Maskottchen-Lurch (Feder-Daempfer)
+  mascotStiffness: 140,
+  mascotDamping: 13,
+  mascotBrakeLean: 0.5, // rad nach vorn beim Bremsen
+  mascotCruiseLean: -0.05, // leicht zurueck waehrend der Fahrt
 };
 
 // Score-Stufen nach gap (Restabstand beim Stillstand), erste passende gewinnt.
 // streakBonus addiert sich pro aktuellem Streak; keepStreak haelt/erhoeht den Streak.
 const TIERS = [
-  { maxGap: 0.7, label: "Punktlandung", base: 1000, streakBonus: 100, keepStreak: true },
-  { maxGap: 1.6, label: "Stark", base: 700, streakBonus: 60, keepStreak: true },
-  { maxGap: 4, label: "Sauber", base: 400, streakBonus: 0, keepStreak: false },
-  { maxGap: 10, label: "Okay", base: 150, streakBonus: 0, keepStreak: false },
-  { maxGap: Infinity, label: "Feigling", base: 50, streakBonus: 0, keepStreak: false },
+  { maxGap: 0.7, label: "Punktlandung", base: 1000, streakBonus: 100, keepStreak: true, quip: "perfect" },
+  { maxGap: 1.6, label: "Stark", base: 700, streakBonus: 60, keepStreak: true, quip: "perfect" },
+  { maxGap: 4, label: "Sauber", base: 400, streakBonus: 0, keepStreak: false, quip: "ok" },
+  { maxGap: 10, label: "Okay", base: 150, streakBonus: 0, keepStreak: false, quip: "ok" },
+  { maxGap: Infinity, label: "Feigling", base: 50, streakBonus: 0, keepStreak: false, quip: "coward" },
 ];
 
 function tierForGap(gap) {
   return TIERS.find((t) => gap <= t.maxGap);
+}
+
+// ============================================================
+// DUCKS - Co-Pilot-Sprueche (trocken, Dev-affin, Rubber-Duck-Gags)
+// ============================================================
+const QUIPS = {
+  perfect: [
+    "Millimeterarbeit. Fast hätte ich dir vertraut.",
+    "Perfekt. Notiere ich für deine Akte.",
+    "So nah dran, die Ente hat kurz an alles geglaubt.",
+    "Sauber. Ich deaktiviere vorsorglich den Notbremsassistenten.",
+    "Präzise wie ein Unit-Test, der zur Abwechslung grün ist.",
+    "Das war knapp genug, um es Kunst zu nennen.",
+    "Ich hätte nicht gebremst. Aber gut, du bist der Mensch.",
+    "Punktlandung. Die Ente möchte deine Nummer.",
+    "Wenn du das reproduzieren kannst, reden wir über eine Beförderung.",
+    "Lehrbuchhaft. Welches Lehrbuch, frage ich lieber nicht.",
+    "Optimal. Ich war kurz davor zu übernehmen. Nur kurz.",
+    "Beeindruckend. Statistisch gesehen ein Ausrutscher nach oben.",
+  ],
+  ok: [
+    "Akzeptabel. Für einen Menschen.",
+    "Etwas früh, aber die Ente verzeiht dir.",
+    "Solide. Niemand schreibt darüber ein Gedicht, aber solide.",
+    "Sicherheitsabstand wie im Fahrschulvideo. Gähn.",
+    "Funktioniert. Schön ist anders.",
+    "Du lebst, die Ente lebt. Ein durchschnittlicher Tag.",
+    "Nicht falsch. Nur nicht mutig.",
+    "Das würde durch den Code-Review gehen. Gerade so.",
+    "Brav. Die Ente nickt höflich.",
+    "Gilt als bestanden. Mit Sternchen.",
+    "Ordentlich. Ich runde großzügig auf.",
+    "Kein Drama. Ich mag kein Drama.",
+  ],
+  coward: [
+    "Drei Meter Abstand zu einer Badeente. Mutig.",
+    "Du stehst. Beide Spurassistenten weinen.",
+    "So früh gebremst, die Ente ist eingeschlafen.",
+    "Sicherheit zuerst. Punkte zuletzt.",
+    "Die Ente winkt dir aus der Ferne zu.",
+    "Das war kein Bremsen, das war eine Entschuldigung.",
+    "Ich habe schon Standbilder gesehen, die schneller waren.",
+    "Vorsichtig. Sehr vorsichtig. Langweilig vorsichtig.",
+    "Du hättest noch einen Kaffee holen können.",
+    "Die Versicherung freut sich. Sonst niemand.",
+    "Mutlos, aber am Leben. Wie die meisten Meetings.",
+    "So viel Abstand, da passt noch ein zweites Auto rein.",
+  ],
+  squish: [
+    "Ich sagte bremsen, nicht pürieren.",
+    "Federn überall. Ich melde das der Versicherung.",
+    "Das war eine Ente. Vergangenheitsform.",
+    "Null Punkte, aber immerhin ein Geräusch.",
+    "Rubber-Duck-Debugging fällt heute aus.",
+    "Ich habe innerlich gebremst. Sehr innerlich.",
+    "Das gibt einen Eintrag im Logbuch. Rot markiert.",
+    "Quietschen war gestern. Heute: Stille.",
+    "Du hattest genau eine Aufgabe.",
+    "Die Ente hat es kommen sehen. Du nicht.",
+    "Crash. Im wörtlichsten Sinne.",
+    "Ich starte den Trauerprozess. PID egal.",
+  ],
+};
+
+let lastQuipText = "";
+
+// Zieht einen Spruch aus einer Kategorie, ohne ihn sofort zu wiederholen.
+function pickQuip(category) {
+  const arr = QUIPS[category] || QUIPS.ok;
+  let q = arr[Math.floor(Math.random() * arr.length)];
+  let guard = 0;
+  while (arr.length > 1 && q === lastQuipText && guard++ < 8) {
+    q = arr[Math.floor(Math.random() * arr.length)];
+  }
+  lastQuipText = q;
+  return q;
 }
 
 // Farbpalette (aus dem Brief)
@@ -130,6 +212,11 @@ const state = {
   // Ergebnis der letzten Runde (fuer Result-Screen)
   lastLabel: "",
   lastPoints: 0,
+  lastQuip: "", // Co-Pilot-Kommentar
+
+  // Maskottchen auf dem Armaturenbrett (Feder-gedaempfter Lurch)
+  mascotLean: 0,
+  mascotLeanVel: 0,
 
   // Debug/Diagnose
   fps: 0,
@@ -229,6 +316,7 @@ function resize() {
 // ============================================================
 function update(dt) {
   state.time += dt;
+  updateMascot(dt); // laeuft auch bei Pause weiter (lebendig)
   if (state.paused) return;
 
   if (state.phase === PHASE.CRUISE) {
@@ -251,6 +339,26 @@ function update(dt) {
   }
 }
 
+// Maskottchen-Lurch: kippt beim Bremsen nach vorn, wackelt sonst sanft.
+function updateMascot(dt) {
+  let target;
+  switch (state.phase) {
+    case PHASE.BRAKE:
+      target = CONFIG.mascotBrakeLean;
+      break;
+    case PHASE.CRUISE:
+      target = CONFIG.mascotCruiseLean;
+      break;
+    default:
+      target = Math.sin(state.time * 2.2) * 0.05; // Leerlauf-Wackeln
+  }
+  const accel =
+    (target - state.mascotLean) * CONFIG.mascotStiffness -
+    state.mascotLeanVel * CONFIG.mascotDamping;
+  state.mascotLeanVel += accel * dt;
+  state.mascotLean += state.mascotLeanVel * dt;
+}
+
 // Auto kommt vor der Ente zum Stehen -> gewertet.
 function stop() {
   state.gap = state.distance;
@@ -267,6 +375,7 @@ function stop() {
 
   state.lastLabel = tier.label;
   state.lastPoints = points;
+  state.lastQuip = pickQuip(tier.quip);
   setPhase(PHASE.RESULT);
 }
 
@@ -280,6 +389,7 @@ function squish() {
   state.streak = 0;
   state.lastLabel = "Squish";
   state.lastPoints = 0;
+  state.lastQuip = pickQuip("squish");
   setPhase(PHASE.RESULT);
 }
 
@@ -291,6 +401,8 @@ function render() {
   drawGround();
   if (isDriving()) drawBrakeHint();
   drawTargetDuck();
+  drawDashboard();
+  drawMascot();
   drawOverlays();
   drawHud();
   drawHint();
@@ -465,10 +577,44 @@ function drawDuck(cx, groundY, h, flat) {
   ctx.fill();
 }
 
+// Armaturenbrett im Vordergrund (gewoelbte Oberkante).
+function drawDashboard() {
+  const topY = view.h * 0.88;
+  ctx.fillStyle = COLORS.dash;
+  ctx.beginPath();
+  ctx.moveTo(0, view.h);
+  ctx.lineTo(0, topY + view.h * 0.03);
+  ctx.quadraticCurveTo(view.w / 2, topY - view.h * 0.05, view.w, topY + view.h * 0.03);
+  ctx.lineTo(view.w, view.h);
+  ctx.closePath();
+  ctx.fill();
+
+  // dezente Glanzkante
+  ctx.strokeStyle = "rgba(255,255,255,0.05)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, topY + view.h * 0.03);
+  ctx.quadraticCurveTo(view.w / 2, topY - view.h * 0.05, view.w, topY + view.h * 0.03);
+  ctx.stroke();
+}
+
+// Maskottchen-Ente auf dem Armaturenbrett (unten rechts), kippt beim Bremsen
+// nach vorn (Richtung Bildmitte = Fahrtrichtung).
+function drawMascot() {
+  const h = view.h * 0.13;
+  const baseX = view.w - h * 1.35;
+  const baseY = view.h - h * 0.08;
+  ctx.save();
+  ctx.translate(baseX, baseY);
+  ctx.rotate(-state.mascotLean);
+  drawDuck(0, 0, h, false);
+  ctx.restore();
+}
+
 // Text-Overlays je nach Phase (Start, Ergebnis, Game Over)
 function drawOverlays() {
   const cx = view.w / 2;
-  const cy = view.h / 2;
+  const cy = view.h * 0.34; // oben, damit die nahe Ziel-Ente sichtbar bleibt
   ctx.textAlign = "center";
 
   if (state.phase === PHASE.READY) {
@@ -482,21 +628,48 @@ function drawOverlays() {
   }
 
   if (state.phase === PHASE.RESULT) {
-    panel(cx, cy, 380, 110);
+    const pw = Math.min(480, view.w * 0.9);
+    ctx.font = "italic 16px system-ui, sans-serif";
+    const quipLines = wrapText(`„${state.lastQuip}“`, pw - 56);
+    const ph = 118 + quipLines.length * 22;
+    panel(cx, cy, pw, ph);
+    let y = cy - ph / 2 + 42;
+
     if (state.outcome === "squish") {
       ctx.fillStyle = "#ff5b5b";
       ctx.font = "700 30px system-ui, sans-serif";
-      ctx.fillText("SQUISH!", cx, cy - 4);
+      ctx.fillText("SQUISH!", cx, y);
+      y += 28;
       ctx.fillStyle = "#cdd8ea";
-      ctx.font = "16px system-ui, sans-serif";
-      ctx.fillText(`Ente plattgefahren  -  Leben uebrig: ${state.lives}`, cx, cy + 26);
+      ctx.font = "15px system-ui, sans-serif";
+      ctx.fillText(`Ente plattgefahren  ·  Leben übrig: ${state.lives}`, cx, y);
+      y += 26;
     } else {
       ctx.fillStyle = "#ffd84d";
       ctx.font = "700 30px system-ui, sans-serif";
-      ctx.fillText(`${state.lastLabel}`, cx, cy - 6);
+      ctx.fillText(`${state.lastLabel}`, cx, y);
+      y += 28;
       ctx.fillStyle = "#f5f5f5";
-      ctx.font = "17px system-ui, sans-serif";
-      ctx.fillText(`Abstand ${state.gap.toFixed(2)} m   +${state.lastPoints} Punkte`, cx, cy + 24);
+      ctx.font = "16px system-ui, sans-serif";
+      ctx.fillText(`Abstand ${state.gap.toFixed(2)} m  ·  +${state.lastPoints} Punkte`, cx, y);
+      y += 26;
+    }
+
+    // Trennlinie
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx - pw / 2 + 28, y - 6);
+    ctx.lineTo(cx + pw / 2 - 28, y - 6);
+    ctx.stroke();
+    y += 16;
+
+    // Co-Pilot-Spruch
+    ctx.fillStyle = "#9fd0ff";
+    ctx.font = "italic 16px system-ui, sans-serif";
+    for (const line of quipLines) {
+      ctx.fillText(line, cx, y);
+      y += 22;
     }
   }
 
@@ -509,6 +682,24 @@ function drawOverlays() {
     ctx.font = "18px system-ui, sans-serif";
     ctx.fillText(`Punkte ${state.score}    Best ${state.best}`, cx, cy + 28);
   }
+}
+
+// Bricht Text auf maxWidth um (nutzt die aktuell gesetzte ctx.font).
+function wrapText(text, maxWidth) {
+  const words = text.split(" ");
+  const lines = [];
+  let line = "";
+  for (const word of words) {
+    const test = line ? line + " " + word : word;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = test;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
 }
 
 // Halbtransparentes, abgerundetes Panel hinter Overlay-Text
@@ -559,24 +750,21 @@ function drawHud() {
   ctx.font = "20px system-ui, sans-serif";
   ctx.fillText("\u{1F986}".repeat(Math.max(0, state.lives)), view.w - 22, 52);
 
-  // Tempo + Restdistanz unten (waehrend der Fahrt)
+  // Restdistanz oben rechts (unter Leben), Tempo unten links auf dem Dashboard
   if (isDriving()) {
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#f3f6fb";
+    ctx.font = "700 24px system-ui, sans-serif";
+    ctx.fillText(`${Math.max(0, state.distance).toFixed(0)} m`, view.w - 22, 84);
+
     const kmh = Math.round(state.speed * 3.6);
     ctx.textAlign = "left";
     ctx.fillStyle = "#f3f6fb";
-    ctx.font = "700 30px system-ui, sans-serif";
-    ctx.fillText(`${kmh}`, 24, view.h - 30);
+    ctx.font = "700 32px system-ui, sans-serif";
+    ctx.fillText(`${kmh}`, 28, view.h - 26);
     ctx.fillStyle = "#9fb0c8";
     ctx.font = "13px system-ui, sans-serif";
-    ctx.fillText("km/h", 24, view.h - 14);
-
-    ctx.textAlign = "right";
-    ctx.fillStyle = "#f3f6fb";
-    ctx.font = "700 30px system-ui, sans-serif";
-    ctx.fillText(`${Math.max(0, state.distance).toFixed(0)}`, view.w - 24, view.h - 30);
-    ctx.fillStyle = "#9fb0c8";
-    ctx.font = "13px system-ui, sans-serif";
-    ctx.fillText("Meter", view.w - 24, view.h - 14);
+    ctx.fillText("km/h", 28, view.h - 10);
   }
 
   ctx.textAlign = "center";
