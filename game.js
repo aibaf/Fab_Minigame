@@ -417,8 +417,11 @@ const view = { w: 0, h: 0, dpr: 1, ui: 0 };
 
 function resize() {
   view.dpr = Math.min(window.devicePixelRatio || 1, 2);
-  view.w = window.innerWidth;
-  view.h = window.innerHeight;
+  // Sichtbare Flaeche nutzen: auf iOS Safari schliesst innerHeight den Bereich
+  // hinter der unteren Toolbar ein -> Cockpit-Elemente landen sonst dahinter.
+  const vv = window.visualViewport;
+  view.w = (vv && vv.width) || window.innerWidth;
+  view.h = (vv && vv.height) || window.innerHeight;
   // Bezugsgroesse fuer Cockpit-Elemente: im Hochformat nicht an die grosse Hoehe
   // koppeln (sonst werden Lenkrad/Tacho/Maskottchen zu gross und ueberlappen).
   view.ui = Math.min(view.h, view.w * 1.2);
@@ -1833,6 +1836,11 @@ function frame(now) {
 function boot() {
   resize();
   window.addEventListener("resize", resize);
+  // iOS Safari: auf das Ein-/Ausblenden der Toolbar reagieren
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", resize);
+    window.visualViewport.addEventListener("scroll", resize);
+  }
   initInput(canvas);
   requestAnimationFrame((t) => {
     lastTime = t / 1000;

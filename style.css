@@ -24,5 +24,6 @@ body {
   display: block;
   width: 100vw;
   height: 100vh;
+  height: 100dvh; /* dynamische Viewport-Hoehe: beruecksichtigt iOS-Toolbar */
   cursor: pointer;
 }
