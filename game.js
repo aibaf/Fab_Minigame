@@ -733,54 +733,81 @@ function drawDuck(cx, groundY, h, flat) {
     return;
   }
 
-  // Koerper
   const bodyCy = groundY - h * 0.3;
-  ctx.fillStyle = COLORS.duckBody;
+  const headR = h * 0.26;
+  const headCy = groundY - h * 0.66;
+
+  // Sanfter Glow-Schein um die grossen Formen (passt zum Neon-Theme)
+  ctx.save();
+  ctx.shadowColor = "rgba(255,210,62,0.6)";
+  ctx.shadowBlur = h * 0.18;
+
+  // Koerper mit Volumen (radialer Verlauf: Highlight oben links)
+  const bodyGrad = ctx.createRadialGradient(
+    cx - w * 0.14, bodyCy - h * 0.12, h * 0.04,
+    cx, bodyCy, w * 0.52
+  );
+  bodyGrad.addColorStop(0, "#FFE99A");
+  bodyGrad.addColorStop(0.55, COLORS.duckBody);
+  bodyGrad.addColorStop(1, "#E8A41E");
+  ctx.fillStyle = bodyGrad;
   ctx.beginPath();
   ctx.ellipse(cx, bodyCy, w * 0.46, h * 0.3, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Fluegel-Andeutungen seitlich am Koerper
-  ctx.fillStyle = "rgba(0,0,0,0.06)";
-  ctx.beginPath();
-  ctx.ellipse(cx - w * 0.34, bodyCy, w * 0.12, h * 0.2, 0, 0, Math.PI * 2);
-  ctx.ellipse(cx + w * 0.34, bodyCy, w * 0.12, h * 0.2, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Kopf
-  const headR = h * 0.25;
-  const headCy = groundY - h * 0.66;
-  ctx.fillStyle = COLORS.duckBody;
+  // Kopf mit Volumen
+  const headGrad = ctx.createRadialGradient(
+    cx - headR * 0.35, headCy - headR * 0.4, headR * 0.1,
+    cx, headCy, headR
+  );
+  headGrad.addColorStop(0, "#FFE99A");
+  headGrad.addColorStop(0.6, COLORS.duckBody);
+  headGrad.addColorStop(1, "#E8A41E");
+  ctx.fillStyle = headGrad;
   ctx.beginPath();
   ctx.arc(cx, headCy, headR, 0, Math.PI * 2);
   ctx.fill();
+  ctx.restore();
 
-  // Augen
-  const eyeDx = headR * 0.42;
-  const eyeY = headCy - headR * 0.08;
-  const eyeR = Math.max(1, headR * 0.16);
-  ctx.fillStyle = "#1a1a1a";
+  // Bauch-Highlight
+  ctx.fillStyle = "rgba(255,255,255,0.2)";
+  ctx.beginPath();
+  ctx.ellipse(cx - w * 0.08, bodyCy + h * 0.06, w * 0.22, h * 0.15, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Fluegel-Andeutung (dezent)
+  ctx.fillStyle = "rgba(170,115,10,0.2)";
+  ctx.beginPath();
+  ctx.ellipse(cx + w * 0.3, bodyCy + h * 0.02, w * 0.13, h * 0.2, 0.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Schnabel mit kleinem Schatten
+  const beakY = headCy + headR * 0.52;
+  ctx.fillStyle = COLORS.duckBeak;
+  ctx.beginPath();
+  ctx.ellipse(cx, beakY, headR * 0.58, headR * 0.34, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(150,60,10,0.32)";
+  ctx.beginPath();
+  ctx.ellipse(cx, beakY + headR * 0.12, headR * 0.5, headR * 0.12, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Augen (gross, lebendig, mit Glanz)
+  const eyeDx = headR * 0.4;
+  const eyeY = headCy - headR * 0.12;
+  const eyeR = Math.max(1.2, headR * 0.2);
+  ctx.fillStyle = "#15131c";
   ctx.beginPath();
   ctx.arc(cx - eyeDx, eyeY, eyeR, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
   ctx.arc(cx + eyeDx, eyeY, eyeR, 0, Math.PI * 2);
   ctx.fill();
   if (eyeR > 2) {
     ctx.fillStyle = "#fff";
     ctx.beginPath();
-    ctx.arc(cx - eyeDx + eyeR * 0.3, eyeY - eyeR * 0.3, eyeR * 0.4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(cx + eyeDx + eyeR * 0.3, eyeY - eyeR * 0.3, eyeR * 0.4, 0, Math.PI * 2);
+    ctx.arc(cx - eyeDx + eyeR * 0.32, eyeY - eyeR * 0.34, eyeR * 0.42, 0, Math.PI * 2);
+    ctx.arc(cx + eyeDx + eyeR * 0.32, eyeY - eyeR * 0.34, eyeR * 0.42, 0, Math.PI * 2);
     ctx.fill();
   }
-
-  // Schnabel
-  ctx.fillStyle = COLORS.duckBeak;
-  ctx.beginPath();
-  ctx.ellipse(cx, headCy + headR * 0.5, headR * 0.55, headR * 0.32, 0, 0, Math.PI * 2);
-  ctx.fill();
 }
 
 // Armaturenbrett im Vordergrund (gewoelbte Oberkante).
