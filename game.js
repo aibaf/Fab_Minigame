@@ -37,6 +37,11 @@ const CONFIG = {
   mascotDamping: 13,
   mascotBrakeLean: 0.5, // rad nach vorn beim Bremsen
   mascotCruiseLean: -0.05, // leicht zurueck waehrend der Fahrt
+
+  // Wandernde Ente (Gameplay-Variante): sanfte Vor-/Zurueck-Bewegung
+  duckMoveFreq: 1.5, // rad/s der Oszillation
+  duckMoveAmp: 6, // max. Eigengeschwindigkeit der Ente (m/s)
+  duckMoveFromRound: 4, // erst ab dieser Runde moeglich (Onboarding)
 };
 
 // Score-Stufen nach gap (Restabstand beim Stillstand), erste passende gewinnt.
@@ -269,6 +274,7 @@ const state = {
   mood: MOODS[0], // aktuelle Strecken-Stimmung (wechselt pro Runde)
   condition: "dry", // Strassenbedingung der Runde (dry/wet/fog)
   decel: CONFIG.decel, // effektive Bremsverzoegerung (haengt an der Bedingung)
+  duckMoving: false, // wandert die Ziel-Ente in dieser Runde vor/zurueck?
   speed: 0, // aktuelles Tempo (m/s)
   distance: 0, // Restdistanz zur Ente (m)
   traveled: 0, // in dieser Runde zurueckgelegte Strecke (m), fuer scrollende Marker
@@ -324,6 +330,11 @@ function startRound() {
   state.mood = moodForRound(state.round);
   state.condition = conditionForRound(state.round);
   state.decel = CONFIG.decel * CONDITIONS[state.condition].decelMul;
+  // Wandernde Ente nicht bei Nebel kombinieren (waere unfair, da spaet sichtbar).
+  state.duckMoving =
+    state.round >= CONFIG.duckMoveFromRound &&
+    state.condition !== "fog" &&
+    Math.random() < 0.45;
   setPhase(PHASE.CRUISE);
 }
 
@@ -428,6 +439,7 @@ function update(dt) {
     const step = state.speed * dt;
     state.distance -= step;
     state.traveled += step;
+    applyDuckDrift(dt);
     if (state.distance <= 0) squish();
   } else if (state.phase === PHASE.BRAKE) {
     // Konstante Verzoegerung bis Stillstand.
@@ -435,12 +447,20 @@ function update(dt) {
     const step = state.speed * dt;
     state.distance -= step;
     state.traveled += step;
+    applyDuckDrift(dt);
     if (state.distance <= 0) {
       squish();
     } else if (state.speed <= CONFIG.stopEpsilon) {
       stop();
     }
   }
+}
+
+// Wandernde Ente: sanfte Vor-/Zurueck-Bewegung -> Rest-Distanz oszilliert.
+function applyDuckDrift(dt) {
+  if (!state.duckMoving) return;
+  const v = Math.cos(state.time * CONFIG.duckMoveFreq) * CONFIG.duckMoveAmp;
+  state.distance = Math.max(0, state.distance + v * dt);
 }
 
 // Maskottchen-Lurch: kippt beim Bremsen nach vorn, wackelt sonst sanft.
@@ -1129,9 +1149,14 @@ function drawTargetDuck() {
     alpha = Math.max(0, Math.min(1, (55 - state.distance) / 25));
     if (alpha <= 0) return;
   }
+  // Wandernde Ente: leichtes seitliches Watscheln als sichtbarer Hinweis
+  let cx = p.cx;
+  if (state.duckMoving && state.phase !== PHASE.RESULT) {
+    cx += Math.sin(state.time * 6) * h * 0.12;
+  }
   ctx.save();
   ctx.globalAlpha = alpha;
-  drawDuck(p.cx, p.y, h, flat);
+  drawDuck(cx, p.y, h, flat);
   ctx.restore();
 }
 
@@ -1479,18 +1504,30 @@ function drawHud() {
   ctx.textAlign = "center";
 }
 
-// Zeigt die aktuelle Strassenbedingung oben mittig an (ausser bei trocken).
+// Zeigt aktive Runden-Modifikatoren oben mittig an (Wetter + wandernde Ente).
 function drawConditionBadge() {
-  if (state.condition === "dry") return;
-  const c = CONDITIONS[state.condition];
-  const col = state.condition === "wet" ? COLORS.neonCyan : "#cdd0ea";
+  const badges = [];
+  if (state.condition !== "dry") {
+    badges.push({
+      text: CONDITIONS[state.condition].label,
+      col: state.condition === "wet" ? COLORS.neonCyan : "#cdd0ea",
+    });
+  }
+  if (state.duckMoving) {
+    badges.push({ text: "WANDERNDE ENTE", col: "#ffe14d" });
+  }
+  if (!badges.length) return;
   ctx.save();
   ctx.textAlign = "center";
-  ctx.fillStyle = col;
-  ctx.shadowColor = col;
-  ctx.shadowBlur = 10;
   ctx.font = "700 14px " + FONT;
-  ctx.fillText(c.label, view.w / 2, 46);
+  let y = 46;
+  for (const b of badges) {
+    ctx.fillStyle = b.col;
+    ctx.shadowColor = b.col;
+    ctx.shadowBlur = 10;
+    ctx.fillText(b.text, view.w / 2, y);
+    y += 20;
+  }
   ctx.restore();
 }
 
