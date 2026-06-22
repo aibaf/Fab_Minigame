@@ -300,6 +300,7 @@ function startRound() {
 // Genau ein Input. Der ganze Screen ist der Brems-Button.
 function handleTap() {
   state.taps++;
+  initAudio(); // erste User-Geste schaltet Audio frei
 
   switch (state.phase) {
     case PHASE.READY:
@@ -307,6 +308,7 @@ function handleTap() {
       break;
     case PHASE.CRUISE:
       setPhase(PHASE.BRAKE); // Bremsen einleiten
+      playNoise(0.4, "squeal");
       break;
     case PHASE.BRAKE:
       // bremst bereits, Tipp ignorieren
@@ -339,6 +341,8 @@ function initInput(canvas) {
     if (e.code === "Space" || e.code === "Enter") {
       e.preventDefault();
       handleTap();
+    } else if (e.code === "KeyM") {
+      setMuted(!audio.muted);
     }
   });
 }
@@ -366,6 +370,7 @@ function update(dt) {
   state.time += dt;
   updateMascot(dt); // laeuft auch bei Pause weiter (lebendig)
   updateEffects(dt); // Partikel/Popups/Shake laufen immer weiter
+  updateEngine(); // Motor-Ton an Tempo koppeln
   if (state.paused) return;
 
   if (state.phase === PHASE.CRUISE) {
@@ -433,10 +438,12 @@ function stop() {
     triggerFlash(COLORS.neonCyan, 0.7);
     addShake(6);
     addPopup(p.cx, popupY, "+" + points, COLORS.neonCyan);
+    playDing(880);
   } else if (tier.quip === "ok") {
     spawnSparks(p.cx, p.y - view.h * 0.04, 12, "#ffe14d");
     addShake(2);
     addPopup(p.cx, popupY, "+" + points, COLORS.text);
+    playDing(587);
   } else {
     addPopup(p.cx, popupY, "+" + points, COLORS.textDim);
   }
@@ -461,6 +468,7 @@ function squish() {
   triggerFlash("#ff3d4d", 0.9);
   addShake(13);
   addPopup(p.cx, p.y - view.h * 0.12, "0", "#ff6a7a");
+  playNoise(0.3, "squish");
 
   setPhase(PHASE.RESULT);
 }
@@ -618,6 +626,94 @@ function drawSpeedLines() {
     }
   }
   ctx.restore();
+}
+
+// ============================================================
+// AUDIO (synthetisch, ohne Assets, abschaltbar mit Taste M)
+// ============================================================
+const audio = {
+  ctx: null,
+  master: null,
+  engine: null,
+  engineGain: null,
+  muted: false,
+};
+
+// Erst nach einer User-Geste erlaubt (Autoplay-Regel) -> aus handleTap.
+function initAudio() {
+  if (audio.ctx) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  audio.ctx = new AC();
+  audio.master = audio.ctx.createGain();
+  audio.master.gain.value = audio.muted ? 0 : 0.5;
+  audio.master.connect(audio.ctx.destination);
+}
+
+function setMuted(m) {
+  audio.muted = m;
+  if (audio.master) audio.master.gain.value = m ? 0 : 0.5;
+}
+
+// Motor-Ton: laeuft waehrend der Fahrt, Tonhoehe steigt mit dem Tempo.
+function updateEngine() {
+  if (!audio.ctx) return;
+  if (!audio.engine) {
+    audio.engine = audio.ctx.createOscillator();
+    audio.engine.type = "sawtooth";
+    audio.engineGain = audio.ctx.createGain();
+    audio.engineGain.gain.value = 0;
+    audio.engine.connect(audio.engineGain).connect(audio.master);
+    audio.engine.start();
+  }
+  const t = audio.ctx.currentTime;
+  if (isDriving()) {
+    audio.engine.frequency.setTargetAtTime(50 + state.speed * 4, t, 0.05);
+    audio.engineGain.gain.setTargetAtTime(0.05, t, 0.1);
+  } else {
+    audio.engineGain.gain.setTargetAtTime(0, t, 0.1);
+  }
+}
+
+// Kurzer Ton (Ding bei gutem Treffer).
+function playDing(freq) {
+  if (!audio.ctx) return;
+  const t = audio.ctx.currentTime;
+  const o = audio.ctx.createOscillator();
+  const g = audio.ctx.createGain();
+  o.type = "triangle";
+  o.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.35, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+  o.connect(g).connect(audio.master);
+  o.start();
+  o.stop(t + 0.42);
+}
+
+// Rausch-basierter Effekt: "squish" (dumpf) oder "squeal" (Bremsquietschen).
+function playNoise(dur, kind) {
+  if (!audio.ctx) return;
+  const t = audio.ctx.currentTime;
+  const buf = audio.ctx.createBuffer(1, Math.ceil(audio.ctx.sampleRate * dur), audio.ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  const src = audio.ctx.createBufferSource();
+  src.buffer = buf;
+  const filter = audio.ctx.createBiquadFilter();
+  const g = audio.ctx.createGain();
+  if (kind === "squish") {
+    filter.type = "lowpass";
+    filter.frequency.value = 700;
+    g.gain.setValueAtTime(0.6, t);
+  } else {
+    filter.type = "bandpass";
+    filter.frequency.value = 1900;
+    g.gain.setValueAtTime(0.16, t);
+  }
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(filter).connect(g).connect(audio.master);
+  src.start();
 }
 
 // ============================================================
@@ -1242,7 +1338,46 @@ function drawHud() {
     ctx.fillText("km/h", 30, view.h - 9);
   }
 
+  drawMuteIcon();
   ctx.textAlign = "center";
+}
+
+// Kleines Lautsprecher-Symbol oben mittig (Status + Hinweis auf Taste M).
+function drawMuteIcon() {
+  const y = 20;
+  const s = 6;
+  const x = view.w / 2 - 14;
+  ctx.save();
+  const col = audio.muted ? COLORS.textDim : COLORS.neonCyan;
+  ctx.fillStyle = col;
+  ctx.strokeStyle = col;
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(x - s, y - s * 0.5);
+  ctx.lineTo(x - s * 0.3, y - s * 0.5);
+  ctx.lineTo(x + s * 0.4, y - s);
+  ctx.lineTo(x + s * 0.4, y + s);
+  ctx.lineTo(x - s * 0.3, y + s * 0.5);
+  ctx.lineTo(x - s, y + s * 0.5);
+  ctx.closePath();
+  ctx.fill();
+  if (audio.muted) {
+    ctx.beginPath();
+    ctx.moveTo(x + s * 0.9, y - s * 0.7);
+    ctx.lineTo(x + s * 1.9, y + s * 0.7);
+    ctx.moveTo(x + s * 1.9, y - s * 0.7);
+    ctx.lineTo(x + s * 0.9, y + s * 0.7);
+    ctx.stroke();
+  } else {
+    ctx.beginPath();
+    ctx.arc(x + s * 0.5, y, s * 1.1, -0.7, 0.7);
+    ctx.stroke();
+  }
+  ctx.fillStyle = COLORS.textDim;
+  ctx.font = "500 10px " + FONT;
+  ctx.textAlign = "left";
+  ctx.fillText("M", x + s * 2.6, y + 3.5);
+  ctx.restore();
 }
 
 function hintForPhase() {
