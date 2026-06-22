@@ -687,7 +687,8 @@ function drawSpeedLines() {
 const audio = {
   ctx: null,
   master: null,
-  engine: null,
+  engineBuffer: null, // dekodiertes Motor-Sample (CC0)
+  engineSrc: null,
   engineGain: null,
   muted: false,
 };
@@ -701,6 +702,15 @@ function initAudio() {
   audio.master = audio.ctx.createGain();
   audio.master.gain.value = audio.muted ? 0 : 0.5;
   audio.master.connect(audio.ctx.destination);
+
+  // Motor-Sample (CC0, siehe CREDITS.md) laden und dekodieren
+  fetch("assets/engine.wav")
+    .then((r) => r.arrayBuffer())
+    .then((b) => audio.ctx.decodeAudioData(b))
+    .then((buf) => {
+      audio.engineBuffer = buf;
+    })
+    .catch(() => {});
 }
 
 function setMuted(m) {
@@ -708,66 +718,24 @@ function setMuted(m) {
   if (audio.master) audio.master.gain.value = m ? 0 : 0.5;
 }
 
-// Motor: pulsbasiertes Modell statt Dauerton. Ein Saegezahn-LFO ("Zuendungen")
-// zerhackt eine Mischung aus Rauschen (Verbrennungstextur) und tonalem Saegezahn
-// in einzelne Pulse -> knatterndes Brummen wie ein echter Motor. Zuendrate und
-// Filter-Cutoff steigen mit dem Tempo (= Drehzahl).
-function buildEngine() {
-  const ac = audio.ctx;
-
-  // Rauschquelle (looping) - rohe Verbrennungstextur
-  const noiseBuf = ac.createBuffer(1, Math.floor(ac.sampleRate * 2), ac.sampleRate);
-  const nd = noiseBuf.getChannelData(0);
-  for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
-  audio.engNoise = ac.createBufferSource();
-  audio.engNoise.buffer = noiseBuf;
-  audio.engNoise.loop = true;
-  const noiseLevel = ac.createGain();
-  noiseLevel.gain.value = 0.55;
-
-  // Tonaler Koerper (Brummen)
-  audio.engTone = ac.createOscillator();
-  audio.engTone.type = "sawtooth";
-  const toneLevel = ac.createGain();
-  toneLevel.gain.value = 0.45;
-
-  // Zuend-Pulse: Saegezahn-LFO moduliert die Durchlass-Lautstaerke
-  audio.engFire = ac.createOscillator();
-  audio.engFire.type = "sawtooth";
-  const fireDepth = ac.createGain();
-  fireDepth.gain.value = 0.5;
-  audio.engPulse = ac.createGain();
-  audio.engPulse.gain.value = 0.5; // Basis; LFO addiert -0.5..+0.5 -> 0..1
-  audio.engFire.connect(fireDepth).connect(audio.engPulse.gain);
-
-  // Auspuff-Formung: Lowpass, oeffnet mit dem Tempo
-  audio.engLP = ac.createBiquadFilter();
-  audio.engLP.type = "lowpass";
-  audio.engLP.frequency.value = 500;
-  audio.engLP.Q.value = 3;
-
-  audio.engineGain = ac.createGain();
-  audio.engineGain.gain.value = 0;
-
-  audio.engNoise.connect(noiseLevel).connect(audio.engPulse);
-  audio.engTone.connect(toneLevel).connect(audio.engPulse);
-  audio.engPulse.connect(audio.engLP).connect(audio.engineGain).connect(audio.master);
-
-  audio.engNoise.start();
-  audio.engTone.start();
-  audio.engFire.start();
-}
-
+// Motor: CC0-Loop-Sample, dessen Tonhoehe (playbackRate) mit dem Tempo steigt
+// (= Drehzahl). Quelle und Lizenz siehe CREDITS.md.
 function updateEngine() {
-  if (!audio.ctx) return;
-  if (!audio.engNoise) buildEngine();
+  if (!audio.ctx || !audio.engineBuffer) return; // wartet, bis das Sample geladen ist
+  if (!audio.engineSrc) {
+    audio.engineSrc = audio.ctx.createBufferSource();
+    audio.engineSrc.buffer = audio.engineBuffer;
+    audio.engineSrc.loop = true;
+    audio.engineGain = audio.ctx.createGain();
+    audio.engineGain.gain.value = 0;
+    audio.engineSrc.connect(audio.engineGain).connect(audio.master);
+    audio.engineSrc.start();
+  }
   const t = audio.ctx.currentTime;
   if (isDriving()) {
-    const fire = 16 + state.speed * 2.2; // Zuendrate ~ Drehzahl
-    audio.engFire.frequency.setTargetAtTime(fire, t, 0.05);
-    audio.engTone.frequency.setTargetAtTime(fire, t, 0.05);
-    audio.engLP.frequency.setTargetAtTime(320 + state.speed * 55, t, 0.08);
-    audio.engineGain.gain.setTargetAtTime(0.13, t, 0.1);
+    const frac = Math.min(1, state.speed / CONFIG.startSpeedMax);
+    audio.engineSrc.playbackRate.setTargetAtTime(0.75 + frac * 1.5, t, 0.08);
+    audio.engineGain.gain.setTargetAtTime(0.6, t, 0.1);
   } else {
     audio.engineGain.gain.setTargetAtTime(0, t, 0.15);
   }
