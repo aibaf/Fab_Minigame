@@ -1521,6 +1521,18 @@ function drawTacho() {
   ctx.restore();
 }
 
+// Setzt ctx.font und verkleinert die Schrift, bis text in maxW passt (Seitenluft
+// auf schmalen Screens). weight z.B. "900 " oder "".
+function fitFont(text, weight, baseSize, fontStack, maxW) {
+  let size = baseSize;
+  ctx.font = `${weight}${size}px ${fontStack}`;
+  const w = ctx.measureText(text).width;
+  if (w > maxW) {
+    size = Math.max(8, Math.floor(size * (maxW / w)));
+    ctx.font = `${weight}${size}px ${fontStack}`;
+  }
+}
+
 // Text-Overlays je nach Phase (Start, Ergebnis, Game Over)
 function drawOverlays() {
   const cx = view.w / 2;
@@ -1528,14 +1540,16 @@ function drawOverlays() {
   ctx.textAlign = "center";
 
   if (state.phase === PHASE.READY) {
-    panel(cx, cy, 390, 130, COLORS.neonCyan);
+    const pw = Math.min(420, view.w * 0.92);
+    const pad = 30;
+    panel(cx, cy, pw, 130, COLORS.neonCyan);
+    fitFont("BREMSKÖNIG", "900 ", 38, FONT, pw - pad * 2);
     withGlow(COLORS.neonCyan, 16, () => {
       ctx.fillStyle = COLORS.text;
-      ctx.font = "900 38px " + FONT;
-      ctx.fillText("BREMSPUNKT", cx, cy - 2);
+      ctx.fillText("BREMSKÖNIG", cx, cy - 2);
     });
+    fitFont("Bremse so spät wie möglich vor der Ente", "", 15, FONT_BODY, pw - pad * 1.4);
     ctx.fillStyle = COLORS.textDim;
-    ctx.font = "15px " + FONT_BODY;
     ctx.fillText("Bremse so spät wie möglich vor der Ente", cx, cy + 32);
   }
 
@@ -1592,15 +1606,18 @@ function drawOverlays() {
   }
 
   if (state.phase === PHASE.OVER) {
-    panel(cx, cy, 390, 130, "#ff5b6e");
+    const pw = Math.min(420, view.w * 0.92);
+    const pad = 30;
+    panel(cx, cy, pw, 130, "#ff5b6e");
+    fitFont("GAME OVER", "900 ", 40, FONT, pw - pad * 2);
     withGlow("#ff5b6e", 16, () => {
       ctx.fillStyle = "#ff5b6e";
-      ctx.font = "900 40px " + FONT;
       ctx.fillText("GAME OVER", cx, cy - 2);
     });
+    const line = `Punkte ${state.score}   ·   Best ${state.best}`;
+    fitFont(line, "700 ", 16, FONT, pw - pad * 1.4);
     ctx.fillStyle = COLORS.text;
-    ctx.font = "700 16px " + FONT;
-    ctx.fillText(`Punkte ${state.score}   ·   Best ${state.best}`, cx, cy + 32);
+    ctx.fillText(line, cx, cy + 32);
   }
 }
 
