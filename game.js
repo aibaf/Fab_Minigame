@@ -708,51 +708,68 @@ function setMuted(m) {
   if (audio.master) audio.master.gain.value = m ? 0 : 0.5;
 }
 
-// Motor-Ton: voller Klang aus zwei verstimmten Saegezaehnen (Grundton + Quinte)
-// durch einen Lowpass, der mit dem Tempo oeffnet, plus leichtes Vibrato-Brummen.
+// Motor: pulsbasiertes Modell statt Dauerton. Ein Saegezahn-LFO ("Zuendungen")
+// zerhackt eine Mischung aus Rauschen (Verbrennungstextur) und tonalem Saegezahn
+// in einzelne Pulse -> knatterndes Brummen wie ein echter Motor. Zuendrate und
+// Filter-Cutoff steigen mit dem Tempo (= Drehzahl).
+function buildEngine() {
+  const ac = audio.ctx;
+
+  // Rauschquelle (looping) - rohe Verbrennungstextur
+  const noiseBuf = ac.createBuffer(1, Math.floor(ac.sampleRate * 2), ac.sampleRate);
+  const nd = noiseBuf.getChannelData(0);
+  for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+  audio.engNoise = ac.createBufferSource();
+  audio.engNoise.buffer = noiseBuf;
+  audio.engNoise.loop = true;
+  const noiseLevel = ac.createGain();
+  noiseLevel.gain.value = 0.55;
+
+  // Tonaler Koerper (Brummen)
+  audio.engTone = ac.createOscillator();
+  audio.engTone.type = "sawtooth";
+  const toneLevel = ac.createGain();
+  toneLevel.gain.value = 0.45;
+
+  // Zuend-Pulse: Saegezahn-LFO moduliert die Durchlass-Lautstaerke
+  audio.engFire = ac.createOscillator();
+  audio.engFire.type = "sawtooth";
+  const fireDepth = ac.createGain();
+  fireDepth.gain.value = 0.5;
+  audio.engPulse = ac.createGain();
+  audio.engPulse.gain.value = 0.5; // Basis; LFO addiert -0.5..+0.5 -> 0..1
+  audio.engFire.connect(fireDepth).connect(audio.engPulse.gain);
+
+  // Auspuff-Formung: Lowpass, oeffnet mit dem Tempo
+  audio.engLP = ac.createBiquadFilter();
+  audio.engLP.type = "lowpass";
+  audio.engLP.frequency.value = 500;
+  audio.engLP.Q.value = 3;
+
+  audio.engineGain = ac.createGain();
+  audio.engineGain.gain.value = 0;
+
+  audio.engNoise.connect(noiseLevel).connect(audio.engPulse);
+  audio.engTone.connect(toneLevel).connect(audio.engPulse);
+  audio.engPulse.connect(audio.engLP).connect(audio.engineGain).connect(audio.master);
+
+  audio.engNoise.start();
+  audio.engTone.start();
+  audio.engFire.start();
+}
+
 function updateEngine() {
   if (!audio.ctx) return;
-  if (!audio.engine) {
-    const ac = audio.ctx;
-    audio.engine = ac.createOscillator();
-    audio.engine.type = "sawtooth";
-    audio.engine2 = ac.createOscillator();
-    audio.engine2.type = "sawtooth";
-    audio.engine2.detune.value = 9; // leichte Verstimmung -> Fuelle
-
-    audio.engineFilter = ac.createBiquadFilter();
-    audio.engineFilter.type = "lowpass";
-    audio.engineFilter.frequency.value = 300;
-    audio.engineFilter.Q.value = 6;
-
-    // Vibrato-LFO auf beide Frequenzen -> leichtes Motor-Brummen
-    audio.engineLFO = ac.createOscillator();
-    audio.engineLFO.type = "sine";
-    audio.engineLFO.frequency.value = 11;
-    audio.engineLFOGain = ac.createGain();
-    audio.engineLFOGain.gain.value = 4;
-    audio.engineLFO.connect(audio.engineLFOGain);
-    audio.engineLFOGain.connect(audio.engine.frequency);
-    audio.engineLFOGain.connect(audio.engine2.frequency);
-
-    audio.engineGain = ac.createGain();
-    audio.engineGain.gain.value = 0;
-    audio.engine.connect(audio.engineFilter);
-    audio.engine2.connect(audio.engineFilter);
-    audio.engineFilter.connect(audio.engineGain).connect(audio.master);
-    audio.engine.start();
-    audio.engine2.start();
-    audio.engineLFO.start();
-  }
+  if (!audio.engNoise) buildEngine();
   const t = audio.ctx.currentTime;
   if (isDriving()) {
-    const base = 32 + state.speed * 2.4;
-    audio.engine.frequency.setTargetAtTime(base, t, 0.06);
-    audio.engine2.frequency.setTargetAtTime(base * 1.5, t, 0.06); // Quinte
-    audio.engineFilter.frequency.setTargetAtTime(250 + state.speed * 45, t, 0.08);
-    audio.engineGain.gain.setTargetAtTime(0.09, t, 0.1);
+    const fire = 16 + state.speed * 2.2; // Zuendrate ~ Drehzahl
+    audio.engFire.frequency.setTargetAtTime(fire, t, 0.05);
+    audio.engTone.frequency.setTargetAtTime(fire, t, 0.05);
+    audio.engLP.frequency.setTargetAtTime(320 + state.speed * 55, t, 0.08);
+    audio.engineGain.gain.setTargetAtTime(0.13, t, 0.1);
   } else {
-    audio.engineGain.gain.setTargetAtTime(0, t, 0.12);
+    audio.engineGain.gain.setTargetAtTime(0, t, 0.15);
   }
 }
 
