@@ -144,6 +144,10 @@ const COLORS = {
   textDim: "#9a8fc7",
 };
 
+// Schriftarten: Orbitron (Retro) fuer HUD/Titel/Zahlen, System-Font fuer Fliesstext.
+const FONT = "'Orbitron', system-ui, sans-serif";
+const FONT_BODY = "system-ui, -apple-system, sans-serif";
+
 // Strecken-Stimmungen wechseln ueber die Runden -> Optik bleibt frisch.
 // Jede Mood liefert Himmelsverlauf, Sonnen- und Gridfarben + Sternintensitaet.
 const MOODS = [
@@ -572,7 +576,7 @@ function drawPopups() {
     ctx.fillStyle = u.color;
     ctx.shadowColor = u.color;
     ctx.shadowBlur = 12;
-    ctx.font = "800 28px system-ui, sans-serif";
+    ctx.font = "900 26px " + FONT;
     ctx.fillText(u.text, u.x, u.y);
     ctx.restore();
   }
@@ -1041,45 +1045,53 @@ function drawOverlays() {
   ctx.textAlign = "center";
 
   if (state.phase === PHASE.READY) {
-    panel(cx, cy, 360, 120);
-    ctx.fillStyle = "#f5f5f5";
-    ctx.font = "700 36px system-ui, sans-serif";
-    ctx.fillText("BREMSPUNKT", cx, cy - 6);
-    ctx.fillStyle = "#cdd8ea";
-    ctx.font = "16px system-ui, sans-serif";
-    ctx.fillText("Bremse so spaet wie moeglich vor der Ente", cx, cy + 26);
+    panel(cx, cy, 390, 130, COLORS.neonCyan);
+    withGlow(COLORS.neonCyan, 16, () => {
+      ctx.fillStyle = COLORS.text;
+      ctx.font = "900 38px " + FONT;
+      ctx.fillText("BREMSPUNKT", cx, cy - 2);
+    });
+    ctx.fillStyle = COLORS.textDim;
+    ctx.font = "15px " + FONT_BODY;
+    ctx.fillText("Bremse so spaet wie moeglich vor der Ente", cx, cy + 32);
   }
 
   if (state.phase === PHASE.RESULT) {
+    const squish = state.outcome === "squish";
+    const accent = squish ? "#ff5b6e" : COLORS.neonCyan;
     const pw = Math.min(480, view.w * 0.9);
-    ctx.font = "italic 16px system-ui, sans-serif";
+    ctx.font = "italic 16px " + FONT_BODY;
     const quipLines = wrapText(`„${state.lastQuip}“`, pw - 56);
-    const ph = 118 + quipLines.length * 22;
-    panel(cx, cy, pw, ph);
-    let y = cy - ph / 2 + 42;
+    const ph = 122 + quipLines.length * 22;
+    panel(cx, cy, pw, ph, accent);
+    let y = cy - ph / 2 + 46;
 
-    if (state.outcome === "squish") {
-      ctx.fillStyle = "#ff5b5b";
-      ctx.font = "700 30px system-ui, sans-serif";
-      ctx.fillText("SQUISH!", cx, y);
-      y += 28;
-      ctx.fillStyle = "#cdd8ea";
-      ctx.font = "15px system-ui, sans-serif";
+    if (squish) {
+      withGlow("#ff5b6e", 16, () => {
+        ctx.fillStyle = "#ff5b6e";
+        ctx.font = "900 30px " + FONT;
+        ctx.fillText("SQUISH!", cx, y);
+      });
+      y += 30;
+      ctx.fillStyle = COLORS.textDim;
+      ctx.font = "15px " + FONT_BODY;
       ctx.fillText(`Ente plattgefahren  ·  Leben übrig: ${state.lives}`, cx, y);
       y += 26;
     } else {
-      ctx.fillStyle = "#ffd84d";
-      ctx.font = "700 30px system-ui, sans-serif";
-      ctx.fillText(`${state.lastLabel}`, cx, y);
-      y += 28;
-      ctx.fillStyle = "#f5f5f5";
-      ctx.font = "16px system-ui, sans-serif";
+      withGlow("#ffe14d", 14, () => {
+        ctx.fillStyle = "#ffe14d";
+        ctx.font = "900 27px " + FONT;
+        ctx.fillText(state.lastLabel.toUpperCase(), cx, y);
+      });
+      y += 30;
+      ctx.fillStyle = COLORS.text;
+      ctx.font = "16px " + FONT_BODY;
       ctx.fillText(`Abstand ${state.gap.toFixed(2)} m  ·  +${state.lastPoints} Punkte`, cx, y);
       y += 26;
     }
 
     // Trennlinie
-    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    ctx.strokeStyle = "rgba(255,255,255,0.14)";
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(cx - pw / 2 + 28, y - 6);
@@ -1088,8 +1100,8 @@ function drawOverlays() {
     y += 16;
 
     // Co-Pilot-Spruch
-    ctx.fillStyle = "#9fd0ff";
-    ctx.font = "italic 16px system-ui, sans-serif";
+    ctx.fillStyle = "#bfe0ff";
+    ctx.font = "italic 16px " + FONT_BODY;
     for (const line of quipLines) {
       ctx.fillText(line, cx, y);
       y += 22;
@@ -1097,13 +1109,15 @@ function drawOverlays() {
   }
 
   if (state.phase === PHASE.OVER) {
-    panel(cx, cy, 360, 120);
-    ctx.fillStyle = "#ff5b5b";
-    ctx.font = "700 38px system-ui, sans-serif";
-    ctx.fillText("GAME OVER", cx, cy - 6);
-    ctx.fillStyle = "#f5f5f5";
-    ctx.font = "18px system-ui, sans-serif";
-    ctx.fillText(`Punkte ${state.score}    Best ${state.best}`, cx, cy + 28);
+    panel(cx, cy, 390, 130, "#ff5b6e");
+    withGlow("#ff5b6e", 16, () => {
+      ctx.fillStyle = "#ff5b6e";
+      ctx.font = "900 40px " + FONT;
+      ctx.fillText("GAME OVER", cx, cy - 2);
+    });
+    ctx.fillStyle = COLORS.text;
+    ctx.font = "700 16px " + FONT;
+    ctx.fillText(`Punkte ${state.score}   ·   Best ${state.best}`, cx, cy + 32);
   }
 }
 
@@ -1125,12 +1139,8 @@ function wrapText(text, maxWidth) {
   return lines;
 }
 
-// Halbtransparentes, abgerundetes Panel hinter Overlay-Text
-function panel(cx, cy, w, h) {
-  const x = cx - w / 2;
-  const y = cy - h / 2;
-  const r = 16;
-  ctx.fillStyle = "rgba(10, 12, 18, 0.66)";
+// Baut einen abgerundeten Rechteck-Pfad (fill/stroke danach getrennt).
+function roundRectPath(x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
   ctx.arcTo(x + w, y, x + w, y + h, r);
@@ -1138,56 +1148,98 @@ function panel(cx, cy, w, h) {
   ctx.arcTo(x, y + h, x, y, r);
   ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
+}
+
+// Dunkles Panel mit Neon-Rahmen + Glow hinter Overlay-Text.
+function panel(cx, cy, w, h, accent) {
+  const x = cx - w / 2;
+  const y = cy - h / 2;
+  accent = accent || COLORS.neonPink;
+  ctx.save();
+  roundRectPath(x, y, w, h, 16);
+  ctx.fillStyle = "rgba(9, 6, 22, 0.85)";
   ctx.fill();
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 2;
+  ctx.shadowColor = accent;
+  ctx.shadowBlur = 18;
+  ctx.stroke();
+  ctx.restore();
 }
 
 // Kontext-Hinweis unten
 function drawHint() {
   ctx.textAlign = "center";
-  ctx.fillStyle = "rgba(255,255,255,0.8)";
-  ctx.font = "15px system-ui, sans-serif";
-  ctx.fillText(hintForPhase(), view.w / 2, view.h - 26);
+  ctx.fillStyle = "rgba(243,236,255,0.78)";
+  ctx.font = "600 13px " + FONT_BODY;
+  ctx.fillText(hintForPhase(), view.w / 2, view.h - 24);
 }
 
-// HUD: Score/Best/Streak links, Runde/Leben rechts, Tempo/Distanz unten.
+// HUD: Score/Best/Streak links, Runde/Multiplikator/Leben rechts, Tempo/Distanz unten.
 function drawHud() {
-  // Score-Block oben links
+  const mult = 1 + (state.round - 1) * CONFIG.roundMultiplierPerRound;
+
+  // Score oben links (mit Glow)
   ctx.textAlign = "left";
-  ctx.fillStyle = "#f3f6fb";
-  ctx.font = "700 26px system-ui, sans-serif";
-  ctx.fillText(`${state.score}`, 22, 38);
-  ctx.fillStyle = "#9fb0c8";
-  ctx.font = "13px system-ui, sans-serif";
-  ctx.fillText(`BEST ${state.best}`, 22, 58);
+  withGlow(COLORS.neonCyan, 10, () => {
+    ctx.fillStyle = COLORS.text;
+    ctx.font = "900 30px " + FONT;
+    ctx.fillText(`${state.score}`, 22, 42);
+  });
+  ctx.fillStyle = COLORS.textDim;
+  ctx.font = "500 12px " + FONT;
+  ctx.fillText(`BEST ${state.best}`, 23, 62);
+
   if (state.streak > 0) {
-    ctx.fillStyle = "#ffd84d";
-    ctx.font = "700 16px system-ui, sans-serif";
-    ctx.fillText(`STREAK x${state.streak}`, 22, 82);
+    // Streak eskaliert farblich (gelb -> orange -> pink)
+    const col =
+      state.streak >= 5 ? COLORS.neonPink : state.streak >= 3 ? "#ff9a3d" : "#ffe14d";
+    withGlow(col, 12, () => {
+      ctx.fillStyle = col;
+      ctx.font = "700 18px " + FONT;
+      ctx.fillText(`STREAK x${state.streak}`, 22, 88);
+    });
   }
 
-  // Runde + Leben oben rechts
+  // Rechte Spalte: Runde, Multiplikator, Leben, (Distanz)
   ctx.textAlign = "right";
-  ctx.fillStyle = "#9fb0c8";
-  ctx.font = "13px system-ui, sans-serif";
-  ctx.fillText(`RUNDE ${state.round}`, view.w - 22, 26);
-  ctx.font = "20px system-ui, sans-serif";
-  ctx.fillText("\u{1F986}".repeat(Math.max(0, state.lives)), view.w - 22, 52);
+  let ry = 24;
+  ctx.fillStyle = COLORS.textDim;
+  ctx.font = "500 12px " + FONT;
+  ctx.fillText(`RUNDE ${state.round}`, view.w - 22, ry);
+  ry += 24;
 
-  // Restdistanz oben rechts (unter Leben), Tempo unten links auf dem Dashboard
+  if (mult > 1.0001) {
+    withGlow(COLORS.neonPink, 10, () => {
+      ctx.fillStyle = COLORS.neonPink;
+      ctx.font = "700 17px " + FONT;
+      ctx.fillText(`x${mult.toFixed(1)}`, view.w - 22, ry);
+    });
+    ry += 24;
+  }
+
+  ctx.fillStyle = COLORS.text;
+  ctx.font = "18px system-ui, sans-serif";
+  ctx.fillText("\u{1F986}".repeat(Math.max(0, state.lives)), view.w - 22, ry);
+  ry += 30;
+
   if (isDriving()) {
-    ctx.textAlign = "right";
-    ctx.fillStyle = "#f3f6fb";
-    ctx.font = "700 24px system-ui, sans-serif";
-    ctx.fillText(`${Math.max(0, state.distance).toFixed(0)} m`, view.w - 22, 84);
+    withGlow(COLORS.neonCyan, 8, () => {
+      ctx.fillStyle = COLORS.text;
+      ctx.font = "700 22px " + FONT;
+      ctx.fillText(`${Math.max(0, state.distance).toFixed(0)} m`, view.w - 22, ry);
+    });
 
     const kmh = Math.round(state.speed * 3.6);
     ctx.textAlign = "left";
-    ctx.fillStyle = "#f3f6fb";
-    ctx.font = "700 32px system-ui, sans-serif";
-    ctx.fillText(`${kmh}`, 28, view.h - 26);
-    ctx.fillStyle = "#9fb0c8";
-    ctx.font = "13px system-ui, sans-serif";
-    ctx.fillText("km/h", 28, view.h - 10);
+    withGlow(COLORS.neonPink, 8, () => {
+      ctx.fillStyle = COLORS.text;
+      ctx.font = "900 32px " + FONT;
+      ctx.fillText(`${kmh}`, 28, view.h - 24);
+    });
+    ctx.fillStyle = COLORS.textDim;
+    ctx.font = "500 12px " + FONT;
+    ctx.fillText("km/h", 30, view.h - 9);
   }
 
   ctx.textAlign = "center";
