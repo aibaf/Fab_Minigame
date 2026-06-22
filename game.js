@@ -163,6 +163,35 @@ function moodForRound(round) {
   return MOODS[(round - 1) % MOODS.length];
 }
 
+// Strassenbedingungen variieren pro Runde das Bremsverhalten bzw. die Sicht.
+// decelMul < 1 = laengerer Bremsweg (nass); fog = Ente erst spaet sichtbar.
+const CONDITIONS = {
+  dry: { label: "TROCKEN", decelMul: 1.0 },
+  wet: { label: "NASS", decelMul: 0.6, rain: true },
+  fog: { label: "NEBEL", decelMul: 1.0, fog: true },
+};
+
+// Runde 1-2 immer trocken (Onboarding), danach gewichtet zufaellig.
+function conditionForRound(round) {
+  if (round <= 2) return "dry";
+  const r = Math.random();
+  if (r < 0.45) return "dry";
+  if (r < 0.75) return "wet";
+  return "fog";
+}
+
+// Regentropfen (seedbasiert), fallen ueber die Zeit -> kein Springen.
+const RAIN = (() => {
+  let s = 4242;
+  const rnd = () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  return Array.from({ length: 110 }, () => ({
+    x: rnd(),
+    y: rnd(),
+    len: 10 + rnd() * 14,
+    sp: 0.6 + rnd() * 0.6,
+  }));
+})();
+
 // Feste Sternpositionen (seedbasiert, einmal erzeugt) -> kein Flackern.
 const STARS = (() => {
   let s = 1234567;
@@ -238,6 +267,8 @@ const state = {
 
   round: 1,
   mood: MOODS[0], // aktuelle Strecken-Stimmung (wechselt pro Runde)
+  condition: "dry", // Strassenbedingung der Runde (dry/wet/fog)
+  decel: CONFIG.decel, // effektive Bremsverzoegerung (haengt an der Bedingung)
   speed: 0, // aktuelles Tempo (m/s)
   distance: 0, // Restdistanz zur Ente (m)
   traveled: 0, // in dieser Runde zurueckgelegte Strecke (m), fuer scrollende Marker
@@ -291,6 +322,8 @@ function startRound() {
   state.gap = 0;
   state.outcome = null;
   state.mood = moodForRound(state.round);
+  state.condition = conditionForRound(state.round);
+  state.decel = CONFIG.decel * CONDITIONS[state.condition].decelMul;
   setPhase(PHASE.CRUISE);
 }
 
@@ -398,7 +431,7 @@ function update(dt) {
     if (state.distance <= 0) squish();
   } else if (state.phase === PHASE.BRAKE) {
     // Konstante Verzoegerung bis Stillstand.
-    state.speed = Math.max(0, state.speed - CONFIG.decel * dt);
+    state.speed = Math.max(0, state.speed - state.decel * dt);
     const step = state.speed * dt;
     state.distance -= step;
     state.traveled += step;
@@ -745,12 +778,14 @@ function render() {
   drawSun();
   drawSkyline();
   drawGround();
+  drawFog();
   if (isDriving()) drawSpeedLines();
-  if (isDriving()) drawBrakeHint();
+  if (isDriving() && !CONDITIONS[state.condition].fog) drawBrakeHint();
   drawTargetDuck();
   drawParticles();
   drawDashboard();
   drawMascot();
+  drawRain();
   drawFlash();
   drawPopups();
   drawOverlays();
@@ -984,11 +1019,41 @@ function drawRoad(m) {
   });
 }
 
+// Nebel-Schicht ueber der Ferne (nur bei fog) - die Ente erscheint erst spaet.
+function drawFog() {
+  if (!CONDITIONS[state.condition].fog) return;
+  const horizonY = view.h * SCENE.horizonFrac;
+  const top = horizonY - view.h * 0.12;
+  const bottom = view.h * 0.74;
+  const g = ctx.createLinearGradient(0, top, 0, bottom);
+  g.addColorStop(0, "rgba(188,190,214,0.55)");
+  g.addColorStop(1, "rgba(188,190,214,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, top, view.w, bottom - top);
+}
+
+// Regen im Vordergrund (nur bei wet), faellt leicht schraeg.
+function drawRain() {
+  if (!CONDITIONS[state.condition].rain) return;
+  ctx.save();
+  ctx.strokeStyle = "rgba(170,210,255,0.4)";
+  ctx.lineWidth = 1.4;
+  for (const d of RAIN) {
+    const y = ((d.y + state.time * d.sp) % 1) * view.h;
+    const x = d.x * view.w;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x - 5, y + d.len);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 // Dezente Andeutung, wo das Auto bei sofortigem Bremsen zum Stehen kaeme.
 // Weicher, farbcodierter Schatten (gruen sicher -> rot Squish), bewusst unscharf,
 // damit das Bauchgefuehl beim "so spaet wie moeglich" erhalten bleibt.
 function drawBrakeHint() {
-  const brakingDist = (state.speed * state.speed) / (2 * CONFIG.decel);
+  const brakingDist = (state.speed * state.speed) / (2 * state.decel);
   if (brakingDist <= 0.5) return;
   const z = Math.min(brakingDist, SCENE.maxRenderDist);
   const p = project(z);
@@ -1016,7 +1081,18 @@ function drawTargetDuck() {
   const h = view.h * 0.46 * p.s;
   if (h < 3) return;
   const flat = state.outcome === "squish" && state.phase === PHASE.RESULT;
+
+  // Bei Nebel erscheint die Ente erst spaet (voll ab ~30 m, unsichtbar ab ~55 m).
+  // Im Ergebnis-Screen immer voll sichtbar.
+  let alpha = 1;
+  if (CONDITIONS[state.condition].fog && state.phase !== PHASE.RESULT) {
+    alpha = Math.max(0, Math.min(1, (55 - state.distance) / 25));
+    if (alpha <= 0) return;
+  }
+  ctx.save();
+  ctx.globalAlpha = alpha;
   drawDuck(p.cx, p.y, h, flat);
+  ctx.restore();
 }
 
 // Zeichnet eine Gummiente, frontal (Blick zum Spieler), Fuesse bei groundY.
@@ -1358,8 +1434,24 @@ function drawHud() {
     ctx.fillText("km/h", 30, view.h - 9);
   }
 
+  drawConditionBadge();
   drawMuteIcon();
   ctx.textAlign = "center";
+}
+
+// Zeigt die aktuelle Strassenbedingung oben mittig an (ausser bei trocken).
+function drawConditionBadge() {
+  if (state.condition === "dry") return;
+  const c = CONDITIONS[state.condition];
+  const col = state.condition === "wet" ? COLORS.neonCyan : "#cdd0ea";
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.fillStyle = col;
+  ctx.shadowColor = col;
+  ctx.shadowBlur = 10;
+  ctx.font = "700 14px " + FONT;
+  ctx.fillText(c.label, view.w / 2, 46);
+  ctx.restore();
 }
 
 // Kleines Lautsprecher-Symbol oben mittig (Status + Hinweis auf Taste M).
