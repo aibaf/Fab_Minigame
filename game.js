@@ -425,6 +425,8 @@ function resize() {
   // Bezugsgroesse fuer Cockpit-Elemente: im Hochformat nicht an die grosse Hoehe
   // koppeln (sonst werden Lenkrad/Tacho/Maskottchen zu gross und ueberlappen).
   view.ui = Math.min(view.h, view.w * 1.2);
+  // Sichere Unterkante fuer Cockpit-Elemente (kleiner Abstand zur Browser-Toolbar)
+  view.botY = view.h - view.ui * 0.035;
   canvas.width = Math.round(view.w * view.dpr);
   canvas.height = Math.round(view.h * view.dpr);
   ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0); // in CSS-Pixeln zeichnen
@@ -1366,7 +1368,7 @@ function drawDashboard() {
 function drawMascot() {
   const h = view.ui * 0.12;
   const baseX = view.w - h * 1.35;
-  const dashY = view.h - view.ui * 0.02; // Federfuss auf dem Armaturenbrett
+  const dashY = view.botY; // Federfuss auf der sicheren Unterkante
   const springH = h * 0.72; // Federhoehe -> Ente sitzt hoeher
   const topY = dashY - springH;
 
@@ -1419,7 +1421,7 @@ function drawSpring(x0, y0, x1, y1, w) {
 function drawSteeringWheel() {
   const cx = view.w / 2;
   const r = view.ui * 0.32;
-  const cy = view.h + view.ui * 0.13; // Nabe unter dem Bildrand -> nur Oberteil sichtbar
+  const cy = view.botY + view.ui * 0.15; // Nabe unter dem Bildrand -> nur Oberteil sichtbar
   const a0 = Math.PI * 1.18;
   const a1 = Math.PI * 1.82;
   ctx.save();
@@ -1461,7 +1463,7 @@ function drawSteeringWheel() {
 function drawTacho() {
   const r = view.ui * 0.072;
   const cx = view.ui * 0.11;
-  const cy = view.h - view.ui * 0.09;
+  const cy = view.botY - view.ui * 0.072;
   const a0 = Math.PI * 0.75; // unten links
   const a1 = Math.PI * 2.25; // unten rechts (270deg)
 
