@@ -844,6 +844,8 @@ function render() {
   drawTargetDuck();
   drawParticles();
   drawDashboard();
+  drawSteeringWheel();
+  drawTacho();
   drawMascot();
   drawRain();
   drawFlash();
@@ -1295,6 +1297,111 @@ function drawMascot() {
   ctx.restore();
 }
 
+// Lenkrad-Andeutung unten mittig: nur der obere Kranz + Speichen ragen ueber die
+// Dashboard-Kante. Ruckt beim Bremsen (gekoppelt an mascotLean).
+function drawSteeringWheel() {
+  const cx = view.w / 2;
+  const cy = view.h * 1.2; // Nabe unter dem Bildrand -> nur Oberteil sichtbar
+  const r = view.h * 0.34;
+  const a0 = Math.PI * 1.18;
+  const a1 = Math.PI * 1.82;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(state.mascotLean * 0.28); // Brems-Ruck
+
+  // Kranz: dunkler dicker Bogen
+  ctx.lineCap = "round";
+  ctx.strokeStyle = "#0b0918";
+  ctx.lineWidth = view.h * 0.055;
+  ctx.beginPath();
+  ctx.arc(0, 0, r, a0, a1);
+  ctx.stroke();
+
+  // Neon-Kanten (innen + aussen)
+  withGlow(COLORS.neonCyan, 10, () => {
+    ctx.strokeStyle = COLORS.neonCyan;
+    ctx.lineWidth = 2;
+    for (const rr of [r - view.h * 0.027, r + view.h * 0.027]) {
+      ctx.beginPath();
+      ctx.arc(0, 0, rr, a0, a1);
+      ctx.stroke();
+    }
+  });
+
+  // Speichen
+  ctx.strokeStyle = "#0b0918";
+  ctx.lineWidth = view.h * 0.03;
+  for (const a of [Math.PI * 1.27, Math.PI * 1.5, Math.PI * 1.73]) {
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// Neon-Rund-Tacho unten links: Skalenbogen + Nadel (Tempo) + km/h-Zahl.
+function drawTacho() {
+  const cx = view.w * 0.1;
+  const cy = view.h - view.h * 0.1;
+  const r = view.h * 0.072;
+  const a0 = Math.PI * 0.75; // unten links
+  const a1 = Math.PI * 2.25; // unten rechts (270deg)
+
+  ctx.save();
+  // dunkle Scheibe
+  ctx.fillStyle = "rgba(8,6,20,0.72)";
+  ctx.beginPath();
+  ctx.arc(cx, cy, r + 5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Skalenbogen
+  withGlow(COLORS.neonCyan, 6, () => {
+    ctx.strokeStyle = "rgba(120,160,200,0.55)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, a0, a1);
+    ctx.stroke();
+  });
+
+  // Tick-Marken
+  ctx.strokeStyle = COLORS.textDim;
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i <= 8; i++) {
+    const a = a0 + (a1 - a0) * (i / 8);
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * (r - 4), cy + Math.sin(a) * (r - 4));
+    ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    ctx.stroke();
+  }
+
+  // Nadel (Tempo)
+  const frac = Math.min(1, Math.max(0, state.speed / CONFIG.startSpeedMax));
+  const na = a0 + (a1 - a0) * frac;
+  withGlow(COLORS.neonPink, 8, () => {
+    ctx.strokeStyle = COLORS.neonPink;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(na) * (r - 3), cy + Math.sin(na) * (r - 3));
+    ctx.stroke();
+  });
+  ctx.fillStyle = COLORS.neonPink;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // km/h-Zahl
+  ctx.textAlign = "center";
+  ctx.fillStyle = COLORS.text;
+  ctx.font = "700 14px " + FONT;
+  ctx.fillText(`${Math.round(state.speed * 3.6)}`, cx, cy + r * 0.5);
+  ctx.fillStyle = COLORS.textDim;
+  ctx.font = "500 8px " + FONT;
+  ctx.fillText("km/h", cx, cy + r * 0.85);
+  ctx.restore();
+}
+
 // Text-Overlays je nach Phase (Start, Ergebnis, Game Over)
 function drawOverlays() {
   const cx = view.w / 2;
@@ -1481,22 +1588,12 @@ function drawHud() {
   ry += 30;
 
   if (isDriving()) {
+    // Restdistanz oben rechts; das Tempo zeigt jetzt der Cockpit-Tacho (drawTacho).
     withGlow(COLORS.neonCyan, 8, () => {
       ctx.fillStyle = COLORS.text;
       ctx.font = "700 22px " + FONT;
       ctx.fillText(`${Math.max(0, state.distance).toFixed(0)} m`, view.w - 22, ry);
     });
-
-    const kmh = Math.round(state.speed * 3.6);
-    ctx.textAlign = "left";
-    withGlow(COLORS.neonPink, 8, () => {
-      ctx.fillStyle = COLORS.text;
-      ctx.font = "900 32px " + FONT;
-      ctx.fillText(`${kmh}`, 28, view.h - 24);
-    });
-    ctx.fillStyle = COLORS.textDim;
-    ctx.font = "500 12px " + FONT;
-    ctx.fillText("km/h", 30, view.h - 9);
   }
 
   drawConditionBadge();
