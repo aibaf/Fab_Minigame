@@ -1356,13 +1356,53 @@ function drawDashboard() {
 // Maskottchen-Ente auf dem Armaturenbrett (unten rechts), kippt beim Bremsen
 // nach vorn (Richtung Bildmitte = Fahrtrichtung).
 function drawMascot() {
-  const h = view.h * 0.13;
-  const baseX = view.w - h * 1.35;
-  const baseY = view.h - h * 0.08;
+  const h = view.h * 0.12;
+  const baseX = view.w - h * 1.5;
+  const dashY = view.h - h * 0.04; // Federfuss auf dem Armaturenbrett
+  const springH = h * 0.72; // Federhoehe -> Ente sitzt hoeher
+  const topY = dashY - springH;
+
+  // kontinuierliches seitliches Wackeln + zusaetzlicher Ausschlag beim Bremsen
+  const swayPhase = Math.sin(state.time * 2.7);
+  const swayX = swayPhase * h * 0.16 + state.mascotLean * h * 0.5;
+  const tilt = swayPhase * 0.13 - state.mascotLean; // Neigung: Wackeln + Brems-Lurch
+
+  drawSpring(baseX, dashY, baseX + swayX, topY, h);
+
   ctx.save();
-  ctx.translate(baseX, baseY);
-  ctx.rotate(-state.mascotLean);
+  ctx.translate(baseX + swayX, topY);
+  ctx.rotate(tilt);
   drawDuck(0, 0, h, false, true); // Co-Pilot-Look: Brille + Muetze
+  ctx.restore();
+}
+
+// Sprungfeder als seitlich oszillierende Spirale: unten fix (x0,y0), Spitze folgt
+// dem Wackeln (x1,y1).
+function drawSpring(x0, y0, x1, y1, w) {
+  const coils = 5;
+  const rx = w * 0.24;
+  const steps = coils * 14;
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.shadowColor = COLORS.neonCyan;
+  ctx.shadowBlur = 8;
+  ctx.strokeStyle = "#aeb8d0"; // metallisch
+  ctx.lineWidth = Math.max(2, w * 0.06);
+  ctx.beginPath();
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const midX = x0 + (x1 - x0) * t; // geneigter Mittelpfad
+    const x = midX + Math.sin(t * coils * Math.PI * 2) * rx;
+    const y = y0 + (y1 - y0) * t;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  // Federteller unten (verankert am Dashboard)
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#8a93ad";
+  ctx.beginPath();
+  ctx.ellipse(x0, y0, w * 0.3, w * 0.08, 0, 0, Math.PI * 2);
+  ctx.fill();
   ctx.restore();
 }
 
