@@ -358,7 +358,7 @@ function handleTap() {
       break;
     case PHASE.CRUISE:
       setPhase(PHASE.BRAKE); // Bremsen einleiten
-      playNoise(0.4, "squeal");
+      playBrake();
       break;
     case PHASE.BRAKE:
       // bremst bereits, Tipp ignorieren
@@ -690,6 +690,7 @@ const audio = {
   engineBuffer: null, // dekodiertes Motor-Sample (CC0)
   engineSrc: null,
   engineGain: null,
+  brakeBuffer: null, // dekodiertes Bremsquietschen (CC0)
   muted: false,
 };
 
@@ -703,13 +704,17 @@ function initAudio() {
   audio.master.gain.value = audio.muted ? 0 : 0.5;
   audio.master.connect(audio.ctx.destination);
 
-  // Motor-Sample (CC0, siehe CREDITS.md) laden und dekodieren
-  fetch("assets/engine.wav")
+  // Motor- und Brems-Sample (beide CC0, siehe CREDITS.md) laden und dekodieren
+  loadSample("assets/engine.wav", (buf) => (audio.engineBuffer = buf));
+  loadSample("assets/brake.mp3", (buf) => (audio.brakeBuffer = buf));
+}
+
+// Laedt eine Audiodatei und legt das dekodierte Buffer ueber den Callback ab.
+function loadSample(url, onReady) {
+  fetch(url)
     .then((r) => r.arrayBuffer())
     .then((b) => audio.ctx.decodeAudioData(b))
-    .then((buf) => {
-      audio.engineBuffer = buf;
-    })
+    .then(onReady)
     .catch(() => {});
 }
 
@@ -764,7 +769,22 @@ function playDing(freq) {
   }
 }
 
-// Rausch-basierter Effekt: "squish" (dumpf) oder "squeal" (Bremsquietschen).
+// Bremsquietschen: echtes CC0-Sample. Fallback auf synthetisch, falls noch nicht geladen.
+function playBrake() {
+  if (!audio.ctx) return;
+  if (audio.brakeBuffer) {
+    const src = audio.ctx.createBufferSource();
+    src.buffer = audio.brakeBuffer;
+    const g = audio.ctx.createGain();
+    g.gain.value = 0.7;
+    src.connect(g).connect(audio.master);
+    src.start();
+  } else {
+    playNoise(0.4, "squeal");
+  }
+}
+
+// Rausch-basierter Effekt: "squish" (dumpf) oder "squeal" (Bremsquietschen, Fallback).
 function playNoise(dur, kind) {
   if (!audio.ctx) return;
   const t = audio.ctx.currentTime;

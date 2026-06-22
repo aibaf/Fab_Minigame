@@ -9,8 +9,14 @@
   - Verwendung: als nahtloser Motor-Loop, Tonhöhe per `playbackRate` an das Tempo
     gekoppelt.
 
-Alle übrigen Sounds (Bremsquietschen, Squish, Treffer-Ding) werden im Code
-synthetisch über die Web Audio API erzeugt (keine externen Dateien).
+- **`assets/brake.mp3`** — Bremsquietschen / Reifen-Screech
+  - Quelle: "Screeching Tires #1", BigSoundBank.com (Joseph SARDIN)
+    (https://bigsoundbank.com/screeching-tires-1-s2368.html)
+  - Lizenz: **CC0** (Public Domain, keine Attribution erforderlich)
+  - Verwendung: einmaliges Abspielen beim Bremsbeginn.
+
+Die übrigen Sounds (Squish, Treffer-Ding sowie ein synthetisches Bremsquietschen
+als Fallback) werden im Code über die Web Audio API erzeugt.
 
 ## Schrift
 
