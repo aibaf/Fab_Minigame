@@ -708,40 +708,75 @@ function setMuted(m) {
   if (audio.master) audio.master.gain.value = m ? 0 : 0.5;
 }
 
-// Motor-Ton: laeuft waehrend der Fahrt, Tonhoehe steigt mit dem Tempo.
+// Motor-Ton: voller Klang aus zwei verstimmten Saegezaehnen (Grundton + Quinte)
+// durch einen Lowpass, der mit dem Tempo oeffnet, plus leichtes Vibrato-Brummen.
 function updateEngine() {
   if (!audio.ctx) return;
   if (!audio.engine) {
-    audio.engine = audio.ctx.createOscillator();
+    const ac = audio.ctx;
+    audio.engine = ac.createOscillator();
     audio.engine.type = "sawtooth";
-    audio.engineGain = audio.ctx.createGain();
+    audio.engine2 = ac.createOscillator();
+    audio.engine2.type = "sawtooth";
+    audio.engine2.detune.value = 9; // leichte Verstimmung -> Fuelle
+
+    audio.engineFilter = ac.createBiquadFilter();
+    audio.engineFilter.type = "lowpass";
+    audio.engineFilter.frequency.value = 300;
+    audio.engineFilter.Q.value = 6;
+
+    // Vibrato-LFO auf beide Frequenzen -> leichtes Motor-Brummen
+    audio.engineLFO = ac.createOscillator();
+    audio.engineLFO.type = "sine";
+    audio.engineLFO.frequency.value = 11;
+    audio.engineLFOGain = ac.createGain();
+    audio.engineLFOGain.gain.value = 4;
+    audio.engineLFO.connect(audio.engineLFOGain);
+    audio.engineLFOGain.connect(audio.engine.frequency);
+    audio.engineLFOGain.connect(audio.engine2.frequency);
+
+    audio.engineGain = ac.createGain();
     audio.engineGain.gain.value = 0;
-    audio.engine.connect(audio.engineGain).connect(audio.master);
+    audio.engine.connect(audio.engineFilter);
+    audio.engine2.connect(audio.engineFilter);
+    audio.engineFilter.connect(audio.engineGain).connect(audio.master);
     audio.engine.start();
+    audio.engine2.start();
+    audio.engineLFO.start();
   }
   const t = audio.ctx.currentTime;
   if (isDriving()) {
-    audio.engine.frequency.setTargetAtTime(50 + state.speed * 4, t, 0.05);
-    audio.engineGain.gain.setTargetAtTime(0.05, t, 0.1);
+    const base = 32 + state.speed * 2.4;
+    audio.engine.frequency.setTargetAtTime(base, t, 0.06);
+    audio.engine2.frequency.setTargetAtTime(base * 1.5, t, 0.06); // Quinte
+    audio.engineFilter.frequency.setTargetAtTime(250 + state.speed * 45, t, 0.08);
+    audio.engineGain.gain.setTargetAtTime(0.09, t, 0.1);
   } else {
-    audio.engineGain.gain.setTargetAtTime(0, t, 0.1);
+    audio.engineGain.gain.setTargetAtTime(0, t, 0.12);
   }
 }
 
-// Kurzer Ton (Ding bei gutem Treffer).
+// Kurzer Zweiklang (Grundton + Quinte) als Treffer-Bestaetigung.
 function playDing(freq) {
   if (!audio.ctx) return;
   const t = audio.ctx.currentTime;
-  const o = audio.ctx.createOscillator();
-  const g = audio.ctx.createGain();
-  o.type = "triangle";
-  o.frequency.value = freq;
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(0.35, t + 0.01);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
-  o.connect(g).connect(audio.master);
-  o.start();
-  o.stop(t + 0.42);
+  const voices = [
+    { f: freq, peak: 0.32, delay: 0 },
+    { f: freq * 1.5, peak: 0.18, delay: 0.04 },
+  ];
+  for (const v of voices) {
+    const o = audio.ctx.createOscillator();
+    const g = audio.ctx.createGain();
+    o.type = "triangle";
+    o.frequency.value = v.f;
+    const s = t + v.delay;
+    g.gain.setValueAtTime(0.0001, s);
+    g.gain.exponentialRampToValueAtTime(v.peak, s + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, s + 0.45);
+    o.connect(g).connect(audio.master);
+    o.start(s);
+    o.stop(s + 0.47);
+  }
 }
 
 // Rausch-basierter Effekt: "squish" (dumpf) oder "squeal" (Bremsquietschen).
