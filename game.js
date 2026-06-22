@@ -129,19 +129,54 @@ function pickQuip(category) {
   return q;
 }
 
-// Farbpalette (aus dem Brief)
+// Neon-Palette (Synthwave). Feste Akzente; die Himmels-/Sonnenstimmung
+// variiert pro Runde ueber MOODS.
 const COLORS = {
-  skyTop: "#243b6b",
-  skyBottom: "#f3a26b",
-  grass: "#3c8f4e",
-  grassDark: "#347a44",
-  road: "#3a3f47",
-  roadEdge: "#5b6230",
-  stripe: "#cdd2da",
-  duckBody: "#FFCD2E",
-  duckBeak: "#F5821F",
-  dash: "#15171c",
+  road: "#0b0a18", // dunkler Asphalt
+  stripe: "#fdf3ff", // Mittelstreifen
+  neonCyan: "#19e6ff",
+  neonPink: "#ff2e97",
+  neonPurple: "#a86bff",
+  duckBody: "#FFD23E",
+  duckBeak: "#FF8A1F",
+  dash: "#0a0913",
+  text: "#f3ecff",
+  textDim: "#9a8fc7",
 };
+
+// Strecken-Stimmungen wechseln ueber die Runden -> Optik bleibt frisch.
+// Jede Mood liefert Himmelsverlauf, Sonnen- und Gridfarben + Sternintensitaet.
+const MOODS = [
+  { name: "sunset", skyTop: "#2a1a55", skyMid: "#8a2a8c", skyBottom: "#ff8a4d",
+    sunTop: "#ffe24d", sunBottom: "#ff3d8b", grid: "#ff2e97", stars: 0.0 },
+  { name: "night", skyTop: "#050414", skyMid: "#221a55", skyBottom: "#5a2e9e",
+    sunTop: "#9a6bff", sunBottom: "#2a1a6b", grid: "#19e6ff", stars: 1.0 },
+  { name: "dusk", skyTop: "#0d1740", skyMid: "#3a4a9c", skyBottom: "#ff9e7a",
+    sunTop: "#fff0a6", sunBottom: "#ff6a8b", grid: "#a86bff", stars: 0.45 },
+];
+
+function moodForRound(round) {
+  return MOODS[(round - 1) % MOODS.length];
+}
+
+// Feste Sternpositionen (seedbasiert, einmal erzeugt) -> kein Flackern.
+const STARS = (() => {
+  let s = 1234567;
+  const rnd = () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  return Array.from({ length: 80 }, () => ({
+    x: rnd(),
+    y: rnd() * 0.78,
+    r: 0.4 + rnd() * 1.3,
+    a: 0.25 + rnd() * 0.7,
+  }));
+})();
+
+// Ferne Bergsilhouette (seedbasiert) als statische Parallax-Schicht.
+const SKYLINE = (() => {
+  let s = 99887766;
+  const rnd = () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  return Array.from({ length: 15 }, () => 0.25 + rnd() * 0.75);
+})();
 
 // Szenen-/Perspektive-Parameter (Fake-3D Bodenebene)
 const SCENE = {
@@ -198,6 +233,7 @@ const state = {
   time: 0, // Gesamtlaufzeit (s)
 
   round: 1,
+  mood: MOODS[0], // aktuelle Strecken-Stimmung (wechselt pro Runde)
   speed: 0, // aktuelles Tempo (m/s)
   distance: 0, // Restdistanz zur Ente (m)
   traveled: 0, // in dieser Runde zurueckgelegte Strecke (m), fuer scrollende Marker
@@ -243,6 +279,7 @@ function startRound() {
   state.traveled = 0;
   state.gap = 0;
   state.outcome = null;
+  state.mood = moodForRound(state.round);
   setPhase(PHASE.CRUISE);
 }
 
@@ -398,6 +435,9 @@ function squish() {
 // ============================================================
 function render() {
   drawSky();
+  drawStars();
+  drawSun();
+  drawSkyline();
   drawGround();
   if (isDriving()) drawBrakeHint();
   drawTargetDuck();
@@ -412,27 +452,183 @@ function isDriving() {
   return state.phase === PHASE.CRUISE || state.phase === PHASE.BRAKE;
 }
 
-// Himmel als Verlauf bis zum Horizont
+// Fuehrt fn mit aktivem Neon-Glow (Schatten) aus und raeumt sauber auf.
+function withGlow(color, blur, fn) {
+  ctx.save();
+  ctx.shadowColor = color;
+  ctx.shadowBlur = blur;
+  fn();
+  ctx.restore();
+}
+
+// Himmel: mehrstufiger Sonnenuntergang-Verlauf je nach Stimmung.
 function drawSky() {
+  const m = state.mood;
   const horizonY = view.h * SCENE.horizonFrac;
   const grad = ctx.createLinearGradient(0, 0, 0, horizonY);
-  grad.addColorStop(0, COLORS.skyTop);
-  grad.addColorStop(1, COLORS.skyBottom);
+  grad.addColorStop(0, m.skyTop);
+  grad.addColorStop(0.62, m.skyMid);
+  grad.addColorStop(1, m.skyBottom);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, view.w, horizonY);
 }
 
-// Gras + Strasse (Trapez zum Fluchtpunkt) + scrollende Querstreifen
-function drawGround() {
+// Sterne im oberen Himmel (nur bei dunkleren Stimmungen sichtbar).
+function drawStars() {
+  const m = state.mood;
+  if (m.stars <= 0) return;
+  const horizonY = view.h * SCENE.horizonFrac;
+  ctx.fillStyle = "#ffffff";
+  for (const st of STARS) {
+    ctx.globalAlpha = st.a * m.stars;
+    ctx.beginPath();
+    ctx.arc(st.x * view.w, st.y * horizonY, st.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Grosse Retro-Sonne am Horizont mit horizontalen Schlitzen.
+function drawSun() {
+  const m = state.mood;
   const horizonY = view.h * SCENE.horizonFrac;
   const cx = view.w / 2;
+  const r = Math.min(view.w, view.h) * 0.17;
+  const cy = horizonY - r * 0.22;
 
-  // Gras unter dem Horizont
-  ctx.fillStyle = COLORS.grass;
+  const grad = ctx.createLinearGradient(0, cy - r, 0, cy + r);
+  grad.addColorStop(0, m.sunTop);
+  grad.addColorStop(1, m.sunBottom);
+
+  withGlow(m.sunBottom, 55, () => {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.fillStyle = grad;
+    ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    ctx.restore();
+  });
+
+  // horizontale Schlitze in der unteren Haelfte (werden nach unten breiter)
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.fillStyle = m.skyBottom;
+  let gap = 3;
+  for (let y = cy + r * 0.1; y < cy + r; ) {
+    ctx.fillRect(cx - r, y, r * 2, gap);
+    y += gap + Math.max(4, gap * 1.6);
+    gap += 1.5;
+  }
+  ctx.restore();
+}
+
+// Ferne Bergsilhouette knapp ueber dem Horizont, mit Neon-Kontur.
+function drawSkyline() {
+  const m = state.mood;
+  const horizonY = view.h * SCENE.horizonFrac;
+  const maxH = view.h * 0.1;
+  const seg = view.w / (SKYLINE.length - 1);
+
+  ctx.fillStyle = "rgba(7,5,18,0.85)";
+  ctx.beginPath();
+  ctx.moveTo(0, horizonY);
+  for (let i = 0; i < SKYLINE.length; i++) {
+    ctx.lineTo(i * seg, horizonY - SKYLINE[i] * maxH);
+  }
+  ctx.lineTo(view.w, horizonY);
+  ctx.closePath();
+  ctx.fill();
+
+  withGlow(m.grid, 8, () => {
+    ctx.strokeStyle = m.grid;
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 0.8;
+    ctx.beginPath();
+    for (let i = 0; i < SKYLINE.length; i++) {
+      const x = i * seg;
+      const y = horizonY - SKYLINE[i] * maxH;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  });
+}
+
+// Dunkle Bodenebene + Neon-Perspektiv-Gitter + Horizont-Glow, dann die Strasse.
+function drawGround() {
+  const m = state.mood;
+  const horizonY = view.h * SCENE.horizonFrac;
+
+  // Dunkle Bodenebene mit leichtem Schimmer zum Horizont
+  const g = ctx.createLinearGradient(0, horizonY, 0, view.h);
+  g.addColorStop(0, "#1a0f3a");
+  g.addColorStop(0.28, "#0c0820");
+  g.addColorStop(1, "#060410");
+  ctx.fillStyle = g;
   ctx.fillRect(0, horizonY, view.w, view.h - horizonY);
 
-  // Strasse als Trapez vom Fluchtpunkt nach unten
+  // Leuchtende Horizont-Linie
+  withGlow(m.grid, 16, () => {
+    ctx.strokeStyle = m.grid;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, horizonY);
+    ctx.lineTo(view.w, horizonY);
+    ctx.stroke();
+  });
+
+  drawGrid(m);
+  drawRoad(m);
+}
+
+// Neon-Perspektiv-Gitter: Faecher-Laengslinien + scrollende Querlinien.
+function drawGrid(m) {
+  const horizonY = view.h * SCENE.horizonFrac;
+  const cx = view.w / 2;
+  ctx.save();
+  ctx.strokeStyle = m.grid;
+  ctx.lineWidth = 1;
+  ctx.shadowColor = m.grid;
+  ctx.shadowBlur = 6;
+
+  // Laengslinien faechern vom Fluchtpunkt nach unten
+  const N = 7;
+  const spread = view.w * 0.95;
+  for (let i = -N; i <= N; i++) {
+    ctx.globalAlpha = 0.3;
+    ctx.beginPath();
+    ctx.moveTo(cx, horizonY);
+    ctx.lineTo(cx + (i / N) * spread, view.h);
+    ctx.stroke();
+  }
+
+  // Querlinien scrollen mit traveled (Tempo-Anker)
+  const spacing = SCENE.stripeSpacing;
+  const offset = state.traveled % spacing;
+  for (let k = 1; ; k++) {
+    const z = k * spacing - offset;
+    if (z <= 0) continue;
+    if (z > SCENE.maxRenderDist) break;
+    const p = project(z);
+    ctx.globalAlpha = 0.1 + 0.4 * p.s;
+    ctx.beginPath();
+    ctx.moveTo(0, p.y);
+    ctx.lineTo(view.w, p.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// Strasse als dunkles Band mit Neon-Raendern und gestricheltem Mittelstreifen.
+function drawRoad(m) {
+  const horizonY = view.h * SCENE.horizonFrac;
+  const cx = view.w / 2;
   const base = project(0);
+
+  // Asphalt-Band
   ctx.fillStyle = COLORS.road;
   ctx.beginPath();
   ctx.moveTo(cx - base.halfW, base.y);
@@ -442,30 +638,40 @@ function drawGround() {
   ctx.closePath();
   ctx.fill();
 
-  // Strassenraender
-  ctx.strokeStyle = COLORS.roadEdge;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(cx - base.halfW, base.y);
-  ctx.lineTo(cx - 1.5, horizonY);
-  ctx.moveTo(cx + base.halfW, base.y);
-  ctx.lineTo(cx + 1.5, horizonY);
-  ctx.stroke();
+  // Neon-Raender: links Cyan, rechts Pink
+  withGlow(COLORS.neonCyan, 14, () => {
+    ctx.strokeStyle = COLORS.neonCyan;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(cx - base.halfW, base.y);
+    ctx.lineTo(cx - 1.5, horizonY);
+    ctx.stroke();
+  });
+  withGlow(COLORS.neonPink, 14, () => {
+    ctx.strokeStyle = COLORS.neonPink;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(cx + base.halfW, base.y);
+    ctx.lineTo(cx + 1.5, horizonY);
+    ctx.stroke();
+  });
 
-  // Querstreifen alle stripeSpacing Meter, scrollen mit traveled
+  // Gestrichelter Mittelstreifen, scrollt mit traveled
   const offset = state.traveled % SCENE.stripeSpacing;
-  ctx.fillStyle = COLORS.stripe;
-  for (let k = 1; ; k++) {
-    const z = k * SCENE.stripeSpacing - offset;
-    if (z <= 0) continue;
-    if (z > SCENE.maxRenderDist) break;
-    const p = project(z);
-    const h = Math.max(1, p.s * 8);
-    const w = p.halfW * 0.86;
-    ctx.globalAlpha = 0.28 + 0.5 * p.s;
-    ctx.fillRect(cx - w, p.y - h / 2, w * 2, h);
-  }
-  ctx.globalAlpha = 1;
+  withGlow(COLORS.stripe, 8, () => {
+    ctx.fillStyle = COLORS.stripe;
+    for (let k = 1; ; k++) {
+      const z = k * SCENE.stripeSpacing - offset;
+      if (z <= 0) continue;
+      if (z > SCENE.maxRenderDist) break;
+      const p = project(z);
+      const h = Math.max(1, p.s * 9);
+      const w = Math.max(1, p.halfW * 0.06);
+      ctx.globalAlpha = 0.25 + 0.65 * p.s;
+      ctx.fillRect(p.cx - w, p.y - h / 2, w * 2, h);
+    }
+    ctx.globalAlpha = 1;
+  });
 }
 
 // Dezente Andeutung, wo das Auto bei sofortigem Bremsen zum Stehen kaeme.
