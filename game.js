@@ -413,12 +413,15 @@ function initInput(canvas) {
 // ============================================================
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
-const view = { w: 0, h: 0, dpr: 1 };
+const view = { w: 0, h: 0, dpr: 1, ui: 0 };
 
 function resize() {
   view.dpr = Math.min(window.devicePixelRatio || 1, 2);
   view.w = window.innerWidth;
   view.h = window.innerHeight;
+  // Bezugsgroesse fuer Cockpit-Elemente: im Hochformat nicht an die grosse Hoehe
+  // koppeln (sonst werden Lenkrad/Tacho/Maskottchen zu gross und ueberlappen).
+  view.ui = Math.min(view.h, view.w * 1.2);
   canvas.width = Math.round(view.w * view.dpr);
   canvas.height = Math.round(view.h * view.dpr);
   ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0); // in CSS-Pixeln zeichnen
@@ -1334,12 +1337,14 @@ function drawDuckAccessory(cx, headCy, headR, eyeDx, eyeY) {
 
 // Armaturenbrett im Vordergrund (gewoelbte Oberkante).
 function drawDashboard() {
-  const topY = view.h * 0.88;
+  const topY = view.h - view.ui * 0.13;
+  const lip = view.ui * 0.03;
+  const bow = view.ui * 0.05;
   ctx.fillStyle = COLORS.dash;
   ctx.beginPath();
   ctx.moveTo(0, view.h);
-  ctx.lineTo(0, topY + view.h * 0.03);
-  ctx.quadraticCurveTo(view.w / 2, topY - view.h * 0.05, view.w, topY + view.h * 0.03);
+  ctx.lineTo(0, topY + lip);
+  ctx.quadraticCurveTo(view.w / 2, topY - bow, view.w, topY + lip);
   ctx.lineTo(view.w, view.h);
   ctx.closePath();
   ctx.fill();
@@ -1348,17 +1353,17 @@ function drawDashboard() {
   ctx.strokeStyle = "rgba(255,255,255,0.05)";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(0, topY + view.h * 0.03);
-  ctx.quadraticCurveTo(view.w / 2, topY - view.h * 0.05, view.w, topY + view.h * 0.03);
+  ctx.moveTo(0, topY + lip);
+  ctx.quadraticCurveTo(view.w / 2, topY - bow, view.w, topY + lip);
   ctx.stroke();
 }
 
 // Maskottchen-Ente auf dem Armaturenbrett (unten rechts), kippt beim Bremsen
 // nach vorn (Richtung Bildmitte = Fahrtrichtung).
 function drawMascot() {
-  const h = view.h * 0.12;
-  const baseX = view.w - h * 1.5;
-  const dashY = view.h - h * 0.04; // Federfuss auf dem Armaturenbrett
+  const h = view.ui * 0.12;
+  const baseX = view.w - h * 1.35;
+  const dashY = view.h - view.ui * 0.02; // Federfuss auf dem Armaturenbrett
   const springH = h * 0.72; // Federhoehe -> Ente sitzt hoeher
   const topY = dashY - springH;
 
@@ -1410,8 +1415,8 @@ function drawSpring(x0, y0, x1, y1, w) {
 // Dashboard-Kante. Ruckt beim Bremsen (gekoppelt an mascotLean).
 function drawSteeringWheel() {
   const cx = view.w / 2;
-  const cy = view.h * 1.2; // Nabe unter dem Bildrand -> nur Oberteil sichtbar
-  const r = view.h * 0.34;
+  const r = view.ui * 0.32;
+  const cy = view.h + view.ui * 0.13; // Nabe unter dem Bildrand -> nur Oberteil sichtbar
   const a0 = Math.PI * 1.18;
   const a1 = Math.PI * 1.82;
   ctx.save();
@@ -1421,7 +1426,7 @@ function drawSteeringWheel() {
   // Kranz: dunkler dicker Bogen
   ctx.lineCap = "round";
   ctx.strokeStyle = "#0b0918";
-  ctx.lineWidth = view.h * 0.055;
+  ctx.lineWidth = view.ui * 0.055;
   ctx.beginPath();
   ctx.arc(0, 0, r, a0, a1);
   ctx.stroke();
@@ -1430,7 +1435,7 @@ function drawSteeringWheel() {
   withGlow(COLORS.neonCyan, 10, () => {
     ctx.strokeStyle = COLORS.neonCyan;
     ctx.lineWidth = 2;
-    for (const rr of [r - view.h * 0.027, r + view.h * 0.027]) {
+    for (const rr of [r - view.ui * 0.027, r + view.ui * 0.027]) {
       ctx.beginPath();
       ctx.arc(0, 0, rr, a0, a1);
       ctx.stroke();
@@ -1439,7 +1444,7 @@ function drawSteeringWheel() {
 
   // Speichen
   ctx.strokeStyle = "#0b0918";
-  ctx.lineWidth = view.h * 0.03;
+  ctx.lineWidth = view.ui * 0.03;
   for (const a of [Math.PI * 1.27, Math.PI * 1.5, Math.PI * 1.73]) {
     ctx.beginPath();
     ctx.moveTo(0, 0);
@@ -1451,9 +1456,9 @@ function drawSteeringWheel() {
 
 // Neon-Rund-Tacho unten links: Skalenbogen + Nadel (Tempo) + km/h-Zahl.
 function drawTacho() {
-  const cx = view.w * 0.1;
-  const cy = view.h - view.h * 0.1;
-  const r = view.h * 0.072;
+  const r = view.ui * 0.072;
+  const cx = view.ui * 0.11;
+  const cy = view.h - view.ui * 0.09;
   const a0 = Math.PI * 0.75; // unten links
   const a1 = Math.PI * 2.25; // unten rechts (270deg)
 
