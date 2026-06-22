@@ -245,7 +245,7 @@ const state = {
   outcome: null, // "stop" | "squish" | null
 
   score: 0,
-  best: 0,
+  best: loadBest(),
   lives: CONFIG.lives,
   streak: 0,
 
@@ -292,6 +292,23 @@ function startRound() {
   state.outcome = null;
   state.mood = moodForRound(state.round);
   setPhase(PHASE.CRUISE);
+}
+
+// Highscore in localStorage (uebersteht Reloads). Defensiv, falls Storage blockiert.
+function loadBest() {
+  try {
+    return parseInt(localStorage.getItem("bremspunkt_best"), 10) || 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function saveBest() {
+  try {
+    localStorage.setItem("bremspunkt_best", String(state.best));
+  } catch (e) {
+    /* Storage nicht verfuegbar (z.B. Privatmodus) - ignorieren */
+  }
 }
 
 // ============================================================
@@ -424,7 +441,10 @@ function stop() {
   const points = Math.round(raw * mult);
 
   state.score += points;
-  if (state.score > state.best) state.best = state.score;
+  if (state.score > state.best) {
+    state.best = state.score;
+    saveBest();
+  }
   state.streak = tier.keepStreak ? state.streak + 1 : 0;
 
   state.lastLabel = tier.label;
@@ -1149,7 +1169,7 @@ function drawOverlays() {
     });
     ctx.fillStyle = COLORS.textDim;
     ctx.font = "15px " + FONT_BODY;
-    ctx.fillText("Bremse so spaet wie moeglich vor der Ente", cx, cy + 32);
+    ctx.fillText("Bremse so spät wie möglich vor der Ente", cx, cy + 32);
   }
 
   if (state.phase === PHASE.RESULT) {
@@ -1385,13 +1405,13 @@ function hintForPhase() {
     case PHASE.READY:
       return "Tippen zum Losfahren";
     case PHASE.CRUISE:
-      return "Tippen zum Bremsen - so spaet wie moeglich!";
+      return "Tippen zum Bremsen - so spät wie möglich!";
     case PHASE.BRAKE:
       return "Bremst...";
     case PHASE.RESULT:
-      return "Tippen fuer die naechste Runde";
+      return "Tippen für die nächste Runde";
     case PHASE.OVER:
-      return "Tippen fuer Neustart";
+      return "Tippen für Neustart";
     default:
       return "";
   }
