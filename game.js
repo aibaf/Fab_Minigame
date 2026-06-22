@@ -254,6 +254,13 @@ const state = {
   mascotLean: 0,
   mascotLeanVel: 0,
 
+  // Juice-Effekte
+  shake: 0, // Screenshake-Staerke (px), klingt ab
+  flash: 0, // Tier-Flash-Staerke (0..1), klingt ab
+  flashColor: "#ffffff",
+  particles: [], // Federn/Funken
+  popups: [], // aufsteigende Punkte-Texte
+
   // Debug/Diagnose
   fps: 0,
   taps: 0,
@@ -354,6 +361,7 @@ function resize() {
 function update(dt) {
   state.time += dt;
   updateMascot(dt); // laeuft auch bei Pause weiter (lebendig)
+  updateEffects(dt); // Partikel/Popups/Shake laufen immer weiter
   if (state.paused) return;
 
   if (state.phase === PHASE.CRUISE) {
@@ -413,6 +421,22 @@ function stop() {
   state.lastLabel = tier.label;
   state.lastPoints = points;
   state.lastQuip = pickQuip(tier.quip);
+
+  const p = project(Math.max(state.gap, 0));
+  const popupY = p.y - view.h * 0.12;
+  if (tier.quip === "perfect") {
+    spawnSparks(p.cx, p.y - view.h * 0.04, 28, COLORS.neonCyan);
+    triggerFlash(COLORS.neonCyan, 0.7);
+    addShake(6);
+    addPopup(p.cx, popupY, "+" + points, COLORS.neonCyan);
+  } else if (tier.quip === "ok") {
+    spawnSparks(p.cx, p.y - view.h * 0.04, 12, "#ffe14d");
+    addShake(2);
+    addPopup(p.cx, popupY, "+" + points, COLORS.text);
+  } else {
+    addPopup(p.cx, popupY, "+" + points, COLORS.textDim);
+  }
+
   setPhase(PHASE.RESULT);
 }
 
@@ -427,7 +451,169 @@ function squish() {
   state.lastLabel = "Squish";
   state.lastPoints = 0;
   state.lastQuip = pickQuip("squish");
+
+  const p = project(0);
+  spawnFeathers(p.cx, p.y - view.h * 0.05, 34);
+  triggerFlash("#ff3d4d", 0.9);
+  addShake(13);
+  addPopup(p.cx, p.y - view.h * 0.12, "0", "#ff6a7a");
+
   setPhase(PHASE.RESULT);
+}
+
+// ============================================================
+// EFFECTS (Juice: Shake, Partikel, Popups, Flash)
+// ============================================================
+
+// Kamera-Wackeln verstaerken (Maximum, damit ein Squish nicht uebertoent wird).
+function addShake(amount) {
+  state.shake = Math.max(state.shake, amount);
+}
+
+// Kurzer farbiger Vollbild-Flash als Ergebnis-Feedback.
+function triggerFlash(color, strength) {
+  state.flashColor = color;
+  state.flash = strength;
+}
+
+// Federn-Explosion (Squish) am Punkt (x,y).
+function spawnFeathers(x, y, n) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = 40 + Math.random() * 190;
+    state.particles.push({
+      x, y,
+      vx: Math.cos(a) * sp,
+      vy: Math.sin(a) * sp - 90,
+      life: 0.8 + Math.random() * 0.8,
+      maxLife: 1.6,
+      size: 3 + Math.random() * 4,
+      color: Math.random() < 0.85 ? COLORS.duckBody : COLORS.duckBeak,
+      rot: Math.random() * Math.PI,
+      vrot: (Math.random() - 0.5) * 10,
+    });
+  }
+}
+
+// Funken (guter Treffer) am Punkt (x,y), nach oben gerichtet.
+function spawnSparks(x, y, n, color) {
+  for (let i = 0; i < n; i++) {
+    const a = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 0.9;
+    const sp = 90 + Math.random() * 230;
+    state.particles.push({
+      x, y,
+      vx: Math.cos(a) * sp,
+      vy: Math.sin(a) * sp,
+      life: 0.4 + Math.random() * 0.5,
+      maxLife: 0.9,
+      size: 2 + Math.random() * 3,
+      color,
+      rot: 0,
+      vrot: 0,
+    });
+  }
+}
+
+// Aufsteigender Punkte-Text am Trefferort.
+function addPopup(x, y, text, color) {
+  state.popups.push({ x, y, text, color, life: 1.2, maxLife: 1.2 });
+}
+
+// Shake/Flash abklingen, Partikel und Popups bewegen.
+function updateEffects(dt) {
+  state.shake = Math.max(0, state.shake - dt * 55);
+  state.flash = Math.max(0, state.flash - dt * 2.2);
+
+  for (const p of state.particles) {
+    p.vy += 520 * dt; // Schwerkraft
+    p.vx *= 1 - 1.2 * dt; // Luftwiderstand
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.rot += p.vrot * dt;
+    p.life -= dt;
+  }
+  if (state.particles.length) {
+    state.particles = state.particles.filter((p) => p.life > 0);
+  }
+
+  for (const u of state.popups) {
+    u.y -= 38 * dt;
+    u.life -= dt;
+  }
+  if (state.popups.length) {
+    state.popups = state.popups.filter((u) => u.life > 0);
+  }
+}
+
+function drawParticles() {
+  for (const p of state.particles) {
+    const a = Math.max(0, Math.min(1, p.life / p.maxLife));
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.rot);
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, p.size, p.size * 0.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawPopups() {
+  ctx.textAlign = "center";
+  for (const u of state.popups) {
+    const a = Math.max(0, Math.min(1, u.life / u.maxLife));
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.fillStyle = u.color;
+    ctx.shadowColor = u.color;
+    ctx.shadowBlur = 12;
+    ctx.font = "800 28px system-ui, sans-serif";
+    ctx.fillText(u.text, u.x, u.y);
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Vollbild-Flash (kurzes Ergebnis-Feedback).
+function drawFlash() {
+  if (state.flash <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = Math.min(0.45, state.flash * 0.45);
+  ctx.fillStyle = state.flashColor;
+  ctx.fillRect(0, 0, view.w, view.h);
+  ctx.restore();
+}
+
+// Seitliche Speed-Lines: bei hohem Tempo nach unten rasende Neon-Striche.
+function drawSpeedLines() {
+  const frac = Math.min(1, (state.speed - 20) / (CONFIG.startSpeedMax - 20));
+  if (frac <= 0.08) return;
+  const horizonY = view.h * SCENE.horizonFrac;
+  const lanes = 4;
+  ctx.save();
+  ctx.strokeStyle = "#bfe9ff";
+  ctx.lineWidth = 2;
+  ctx.shadowColor = COLORS.neonCyan;
+  ctx.shadowBlur = 6;
+  for (let side = -1; side <= 1; side += 2) {
+    for (let lane = 0; lane < lanes; lane++) {
+      const t = (state.time * (1.2 + frac * 2) + lane * 0.31 + (side < 0 ? 0 : 0.5)) % 1;
+      const x = view.w / 2 + side * view.w * (0.34 + lane * 0.05);
+      const y = horizonY + (view.h - horizonY) * t;
+      const len = 12 + 42 * t * frac;
+      ctx.globalAlpha = Math.sin(t * Math.PI) * 0.4 * frac;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x, y + len);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
 }
 
 // ============================================================
@@ -439,10 +625,14 @@ function render() {
   drawSun();
   drawSkyline();
   drawGround();
+  if (isDriving()) drawSpeedLines();
   if (isDriving()) drawBrakeHint();
   drawTargetDuck();
+  drawParticles();
   drawDashboard();
   drawMascot();
+  drawFlash();
+  drawPopups();
   drawOverlays();
   drawHud();
   drawHint();
@@ -1035,7 +1225,17 @@ function frame(now) {
   if (dt > 0) state.fps = state.fps * 0.9 + (1 / dt) * 0.1; // geglaettet
 
   update(dt);
+
+  // Screenshake: ganze Szene leicht versetzt zeichnen
+  ctx.save();
+  if (state.shake > 0.2) {
+    ctx.translate(
+      (Math.random() * 2 - 1) * state.shake,
+      (Math.random() * 2 - 1) * state.shake
+    );
+  }
   render();
+  ctx.restore();
 
   requestAnimationFrame(frame);
 }
