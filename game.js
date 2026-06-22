@@ -1163,8 +1163,8 @@ function drawTargetDuck() {
 }
 
 // Zeichnet eine Gummiente, frontal (Blick zum Spieler), Fuesse bei groundY.
-// flat=true -> plattgedrueckt (Squish, wird in Schritt 6 mit Federn ergaenzt).
-function drawDuck(cx, groundY, h, flat) {
+// flat=true -> plattgedrueckt (Squish). accessory=true -> Co-Pilot-Look (Brille + Muetze).
+function drawDuck(cx, groundY, h, flat, accessory) {
   const w = h * 1.05;
 
   // Bodenschatten
@@ -1261,6 +1261,75 @@ function drawDuck(cx, groundY, h, flat) {
     ctx.arc(cx + eyeDx + eyeR * 0.32, eyeY - eyeR * 0.34, eyeR * 0.42, 0, Math.PI * 2);
     ctx.fill();
   }
+
+  if (accessory) drawDuckAccessory(cx, headCy, headR, eyeDx, eyeY);
+}
+
+// Co-Pilot-Accessoire: Schirmmuetze + Sonnenbrille (nur fuers Maskottchen).
+function drawDuckAccessory(cx, headCy, headR, eyeDx, eyeY) {
+  const capCol = "#241a55"; // dunkelviolett, hebt sich vom Gelb ab
+
+  // --- Schirmmuetze (Baseball-Cap) ---
+  const brimY = headCy - headR * 0.24; // knapp ueber der Brille
+  // Schirm: breite flache Platte, ragt nach vorne
+  ctx.fillStyle = capCol;
+  ctx.beginPath();
+  ctx.ellipse(cx, brimY, headR * 1.05, headR * 0.16, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Krone: Kuppel, deckt den oberen Kopf bis knapp ueber die Augen
+  ctx.beginPath();
+  ctx.ellipse(cx, headCy - headR * 0.6, headR * 0.96, headR * 0.42, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Highlight auf der Krone (Volumen)
+  ctx.fillStyle = "rgba(255,255,255,0.12)";
+  ctx.beginPath();
+  ctx.ellipse(cx - headR * 0.3, headCy - headR * 0.78, headR * 0.35, headR * 0.16, -0.4, 0, Math.PI * 2);
+  ctx.fill();
+  // Durchgehende Neon-Kontur (Krone oben + Schirmkante)
+  withGlow(COLORS.neonPink, 8, () => {
+    ctx.strokeStyle = COLORS.neonPink;
+    ctx.lineWidth = Math.max(1.4, headR * 0.06);
+    ctx.beginPath();
+    ctx.ellipse(cx, headCy - headR * 0.6, headR * 0.96, headR * 0.42, 0, Math.PI, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(cx, brimY, headR * 1.05, headR * 0.16, 0, 0, Math.PI);
+    ctx.stroke();
+  });
+
+  // --- Sonnenbrille ---
+  const lensW = headR * 0.44;
+  const lensH = headR * 0.36;
+  const gY = eyeY + headR * 0.03;
+  withGlow(COLORS.neonCyan, 6, () => {
+    // Linsen (dunkel)
+    ctx.fillStyle = "rgba(10,8,24,0.92)";
+    for (const sx of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(cx + sx * eyeDx, gY, lensW, lensH, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Steg + Neon-Raender
+    ctx.strokeStyle = COLORS.neonCyan;
+    ctx.lineWidth = Math.max(1.4, headR * 0.06);
+    ctx.beginPath();
+    ctx.moveTo(cx - eyeDx + lensW * 0.72, gY);
+    ctx.lineTo(cx + eyeDx - lensW * 0.72, gY);
+    ctx.stroke();
+    for (const sx of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(cx + sx * eyeDx, gY, lensW, lensH, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  });
+  // dezenter Glanz auf den Linsen
+  ctx.strokeStyle = "rgba(255,255,255,0.4)";
+  ctx.lineWidth = 1;
+  for (const sx of [-1, 1]) {
+    ctx.beginPath();
+    ctx.arc(cx + sx * eyeDx - lensW * 0.2, gY - lensH * 0.2, lensW * 0.45, Math.PI * 1.1, Math.PI * 1.5);
+    ctx.stroke();
+  }
 }
 
 // Armaturenbrett im Vordergrund (gewoelbte Oberkante).
@@ -1293,7 +1362,7 @@ function drawMascot() {
   ctx.save();
   ctx.translate(baseX, baseY);
   ctx.rotate(-state.mascotLean);
-  drawDuck(0, 0, h, false);
+  drawDuck(0, 0, h, false, true); // Co-Pilot-Look: Brille + Muetze
   ctx.restore();
 }
 
